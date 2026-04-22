@@ -300,6 +300,7 @@ const INITIAL_CATEGORIES = [
 
 const App = () => {
   const [isUnlocked, setIsUnlocked] = useState(false);
+  const [isRestoringSession, setIsRestoringSession] = useState(true);
   const [accessKeyInput, setAccessKeyInput] = useState('');
   const [rememberKey, setRememberKey] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
@@ -308,6 +309,88 @@ const App = () => {
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const fileInputRef = useRef<HTMLInputElement>(null);
   
+  const [serverInitialized, setServerInitialized] = useState(false);
+  const syncLock = useRef(false);
+
+  const deviceHwid = useMemo(() => generateHWID(getDeviceFingerprint()), []);
+
+  useEffect(() => {
+    // Initial data sync
+    fetch('/api/sync')
+      .then(r => r.json())
+      .then(data => {
+        syncLock.current = true;
+        for (const k in data) {
+          localStorage.setItem(k, JSON.stringify(data[k].data));
+          window.dispatchEvent(new CustomEvent(`sync-update-${k}`, { detail: data[k].data }));
+        }
+        syncLock.current = false;
+        setServerInitialized(true);
+      })
+      .catch(e => {
+        console.error('Failed to sync', e);
+        setServerInitialized(true);
+      });
+
+    // Session auto-restore and unlock logic based on HWID
+    if (deviceHwid) {
+      setIsRestoringSession(true);
+      fetch('/api/license/check-hwid', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ hwid: deviceHwid, key: localStorage.getItem('scard_saved_access_key') || '' })
+      })
+      .then(res => res.json())
+      .then(data => {
+        if (data.valid) {
+          setIsUnlocked(true);
+        } else {
+          // If validity fails on server but matches VALID_ACCESS_KEYS, unlock. (Fallback)
+          if (VALID_ACCESS_KEYS.includes(localStorage.getItem('scard_saved_access_key') || '')) setIsUnlocked(true);
+        }
+        // Attempt to load session
+        return fetch(`/api/auth/session/${deviceHwid}`);
+      })
+      .then(res => res.json())
+      .then(sessionData => {
+        if (sessionData && sessionData.user) {
+          setUser(sessionData.user);
+          if (sessionData.user.role === 'atendente') {
+            setCurrentView('sales');
+          } else {
+            setCurrentView('dashboard');
+          }
+        }
+      })
+      .catch(err => console.error("Error checking session/license:", err))
+      .finally(() => setIsRestoringSession(false));
+    } else {
+      setIsRestoringSession(false);
+    }
+
+    // Real-time synchronization via WebSocket
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${protocol}//${window.location.host}`;
+    const ws = new WebSocket(wsUrl);
+
+    ws.onmessage = (event) => {
+      try {
+        const message = JSON.parse(event.data);
+        if (message.type === 'update' && message.key) {
+           syncLock.current = true;
+           localStorage.setItem(message.key, JSON.stringify(message.data));
+           window.dispatchEvent(new CustomEvent(`sync-update-${message.key}`, { detail: message.data }));
+           // Small delay to prevent echo writes back to the server
+           setTimeout(() => { syncLock.current = false; }, 100);
+        }
+      } catch (e) {}
+    };
+
+    return () => {
+      ws.close();
+    };
+  }, []);
+
   const usePersistedState = <T,>(key: string, initial: T): [T, React.Dispatch<React.SetStateAction<T>>] => {
     const [state, setState] = useState<T>(() => {
       const stored = localStorage.getItem(key);
@@ -323,7 +406,27 @@ const App = () => {
         return initial;
       }
     });
-    useEffect(() => { localStorage.setItem(key, JSON.stringify(state)); }, [key, state]);
+
+    useEffect(() => {
+      const handler = (e: any) => {
+        setState(e.detail);
+      };
+      window.addEventListener(`sync-update-${key}`, handler);
+      return () => window.removeEventListener(`sync-update-${key}`, handler);
+    }, [key]);
+
+    useEffect(() => {
+      if (syncLock.current) return;
+      localStorage.setItem(key, JSON.stringify(state));
+      if (serverInitialized) {
+        fetch(`/api/sync/${key}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(state)
+        }).catch(err => console.error('Sync error:', err));
+      }
+    }, [key, state, serverInitialized]);
+
     return [state, setState];
   };
 
@@ -354,36 +457,21 @@ const App = () => {
 
   const [openingBalanceInput, setOpeningBalanceInput] = useState(0);
 
-  const deviceHwid = useMemo(() => generateHWID(getDeviceFingerprint()), []);
-
-  useEffect(() => {
-    const savedKey = localStorage.getItem('scard_saved_access_key');
-    if (savedKey && VALID_ACCESS_KEYS.includes(savedKey)) {
-      if (keyRegistrations[savedKey] && keyRegistrations[savedKey] !== deviceHwid) {
-        localStorage.removeItem('scard_saved_access_key');
-        return;
-      }
-      setIsUnlocked(true);
-    }
-  }, [keyRegistrations, deviceHwid]);
-
-  const handleVerifyAccessKey = (e: React.FormEvent) => {
+  const handleVerifyAccessKey = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsValidating(true);
     const trimmedKey = accessKeyInput.trim();
 
-    setTimeout(() => {
-      if (VALID_ACCESS_KEYS.includes(trimmedKey)) {
-        const registeredHwid = keyRegistrations[trimmedKey];
-        
-        if (registeredHwid && registeredHwid !== deviceHwid) {
-          alert('ERRO DE SEGURANÇA: Esta licença/chave já está vinculada a outro dispositivo. Chaves de acesso SCARDPRO são de uso exclusivo por terminal único (HWID Lock).');
-          setIsValidating(false);
-          setAccessKeyInput('');
-          return;
-        }
-
-        if (!registeredHwid) {
+    try {
+      const res = await fetch('/api/license/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: trimmedKey, hwid: deviceHwid })
+      });
+      const data = await res.json();
+      
+      if (data.valid) {
+        if (!keyRegistrations[trimmedKey]) {
           setKeyRegistrations(prev => ({ ...prev, [trimmedKey]: deviceHwid }));
         }
 
@@ -392,11 +480,25 @@ const App = () => {
         }
         setIsUnlocked(true);
       } else {
-        alert('Chave de acesso inválida ou expirada. Entre em contato com o suporte SCARD.');
+        alert(data.message || 'Chave de acesso inválida ou expirada no Servidor.');
         setAccessKeyInput('');
       }
-      setIsValidating(false);
-    }, 1200);
+    } catch(err) {
+      // Fallback local if DB fail
+      if (VALID_ACCESS_KEYS.includes(trimmedKey)) {
+        const registeredHwid = keyRegistrations[trimmedKey];
+        if (registeredHwid && registeredHwid !== deviceHwid) {
+          alert('ERRO DE SEGURANÇA: Esta licença/chave já está vinculada a outro dispositivo.');
+        } else {
+          if (!registeredHwid) setKeyRegistrations(prev => ({ ...prev, [trimmedKey]: deviceHwid }));
+          if (rememberKey) localStorage.setItem('scard_saved_access_key', trimmedKey);
+          setIsUnlocked(true);
+        }
+      } else {
+         alert('Falha na validação com o servidor e chave local inválida.');
+      }
+    }
+    setIsValidating(false);
   };
 
   const handleLogin = (e: React.FormEvent) => {
@@ -406,12 +508,19 @@ const App = () => {
     const password = (form.elements.namedItem('password') as HTMLInputElement).value;
 
     if (email === 'master' && password === '965088') {
-      setUser({
+      const masterUser: User = {
         id: 0,
         name: 'MASTER SYSTEM',
         email: 'master@internal',
         role: 'admin',
         createdAt: new Date().toISOString()
+      };
+      setUser(masterUser);
+      // Salvar sessão no servidor para F5 persistence
+      fetch('/api/auth/session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ hwid: deviceHwid, user: masterUser })
       });
       setCurrentView('dashboard');
       return;
@@ -420,6 +529,12 @@ const App = () => {
     const foundUser = dbUsers.find(u => u.email === email && u.password === password);
     if (foundUser) {
       setUser(foundUser);
+      // Salvar sessão no servidor para F5 persistence
+      fetch('/api/auth/session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ hwid: deviceHwid, user: foundUser })
+      });
       if (foundUser.role === 'atendente') {
         setCurrentView('sales');
       } else {
@@ -583,6 +698,15 @@ const App = () => {
       alert('Caixa encerrado e registrado com sucesso!');
     }
   };
+
+  if (isRestoringSession) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex flex-col gap-4 items-center justify-center p-6 text-center">
+        <div className="w-10 h-10 border-4 border-indigo-900 border-t-indigo-600 rounded-full animate-spin"></div>
+        <p className="text-indigo-600/50 text-[10px] uppercase font-black tracking-widest animate-pulse">Restaurando Sua Sessão...</p>
+      </div>
+    );
+  }
 
   if (!isUnlocked) {
     return (
@@ -766,7 +890,11 @@ const App = () => {
               <span className="font-black uppercase text-[9px] tracking-widest">Fechar Caixa</span>
             </button>
           )}
-          <button type="button" onClick={() => { setIsUnlocked(false); setUser(null); }} className="flex items-center space-x-3 text-slate-500 hover:text-red-400 transition-all w-full px-4 py-3 rounded-xl hover:bg-red-500/5 group">
+          <button type="button" onClick={() => { 
+            setIsUnlocked(false); 
+            setUser(null); 
+            fetch('/api/auth/session', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ hwid: deviceHwid, user: null }) });
+          }} className="flex items-center space-x-3 text-slate-500 hover:text-red-400 transition-all w-full px-4 py-3 rounded-xl hover:bg-red-500/5 group">
             <LogOut size={18} />
             <span className="font-black uppercase text-[9px] tracking-widest">Sair</span>
           </button>

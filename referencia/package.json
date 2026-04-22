@@ -7,12 +7,10 @@
     "dev": "tsx server.ts",
     "build": "tsc && vite build && esbuild server.ts --bundle --platform=node --target=node18 --outfile=dist/server.cjs --external:express --external:pg --external:cors --external:dotenv --external:typescript --external:vite --external:ws",
     "start": "NODE_ENV=production node dist/server.cjs",
-    "lint": "tsc --noEmit",
-    "preview": "vite preview"
+    "lint": "tsc --noEmit"
   },
   "dependencies": {
-    "@types/papaparse": "^5.5.2",
-    "@vercel/speed-insights": "^2.0.0",
+    "@types/ws": "^8.18.1",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
@@ -32,7 +30,7 @@
     "@types/pg": "^8.20.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
-    "@types/ws": "^8.18.1",
+    "@vercel/node": "^5.7.10",
     "@vitejs/plugin-react": "^4.3.1",
     "autoprefixer": "^10.4.20",
     "esbuild": "^0.28.0",
