@@ -1,5 +1,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import Papa from 'papaparse';
+import * as XLSX from 'xlsx';
 import { createRoot } from 'react-dom/client';
 import { 
   LayoutDashboard, Package, ShoppingCart, ArrowRightLeft, 
@@ -14,21 +16,10 @@ import {
   Printer, Check, Key, Shield, Monitor, UserPlus, HandCoins, Share2, FileText, Target,
   Cake, Bike
 } from 'lucide-react';
-import mqtt from 'mqtt';
-
-let syncBroadcastChannel: BroadcastChannel | null = null;
-let syncMqttClient: mqtt.MqttClient | null = null;
-let currentSyncTopic = '';
-let currentDeviceHwid = '';
-
-// --- CONFIGURAÇÃO DE SEGURANÇA (CHAVES DE ACESSO) ---
-const VALID_ACCESS_KEYS = [
-  'VLYOG-1YMEL-8NNBZ-6NJ08-6WMFH', //-- RD STREET
-  '6KT23-4125K-4QKJ6-VAEYU-UEEEF', //-- RD STREET CASA
-  'Master',
-];
 
 // --- UTILITÁRIOS DE SEGURANÇA DE HARDWARE ---
+
+export const globalStoreData: Record<string, any> = {};
 
 const getDeviceFingerprint = () => {
   const { userAgent, language, hardwareConcurrency, platform } = navigator;
@@ -50,6 +41,71 @@ const generateHWID = (str: string) => {
 
 const formatCurrency = (val: number) => {
   return val.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+};
+
+const usePersistedState = <T,>(key: string, initial: T): [T, React.Dispatch<React.SetStateAction<T>>] => {
+  const lastSyncRef = useRef<number>(globalStoreData[key]?.updatedAt || 0);
+  
+  const [state, setState] = useState<T>(() => {
+    // Prioridade: Banco de Dados PG (via globalStoreData)
+    const storedItem = globalStoreData[key];
+    let stored = storedItem ? JSON.stringify(storedItem.data) : null;
+    
+    try {
+      if (!stored) return initial;
+      const parsed = JSON.parse(stored);
+      if (key === 'db_settings') {
+        const initialAny = initial as any;
+        return { ...initial, ...parsed, cardFees: { ...initialAny.cardFees, ...(parsed.cardFees || {}) } } as T;
+      }
+      return parsed;
+    } catch (e) {
+      return initial;
+    }
+  });
+
+  const isFirstRender = useRef(true);
+  const isRemoteUpdate = useRef(false);
+
+  // Escutar atualizações via WebSocket enviadas pelo DataProvider
+  useEffect(() => {
+    const handleStoreUpdate = (e: any) => {
+      if (e.detail.key === key) {
+        if (e.detail.updatedAt > lastSyncRef.current) {
+          lastSyncRef.current = e.detail.updatedAt;
+          isRemoteUpdate.current = true;
+          setState(e.detail.data);
+        }
+      }
+    };
+    window.addEventListener('store-update' as any, handleStoreUpdate);
+    return () => window.removeEventListener('store-update' as any, handleStoreUpdate);
+  }, [key]);
+
+  useEffect(() => { 
+    // Sincronizar EXCLUSIVAMENTE com banco de dados Vercel Postgres em background
+    if (!isFirstRender.current) {
+      if (isRemoteUpdate.current) {
+        // Se foi uma atualização remota (WS), apenas resetamos a flag e não enviamos de volta
+        isRemoteUpdate.current = false;
+        return;
+      }
+
+      fetch(`/api/sync/${key}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(state)
+      })
+      .then(res => res.json())
+      .then(res => {
+        if (res.updatedAt) lastSyncRef.current = res.updatedAt;
+      })
+      .catch(err => console.error("Erro sincronizando DB Postgres", key, err));
+    }
+    isFirstRender.current = false;
+  }, [key, state]);
+
+  return [state, setState];
 };
 
 const parseCurrency = (val: string) => {
@@ -310,56 +366,37 @@ const App = () => {
   const [accessKeyInput, setAccessKeyInput] = useState('');
   const [rememberKey, setRememberKey] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
+  const [authError, setAuthError] = useState('');
   
   const [user, setUser] = useState<User | null>(null);
   const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
   const fileInputRef = useRef<HTMLInputElement>(null);
   
-  const [serverInitialized, setServerInitialized] = useState(false);
-  const syncLock = useRef(false);
-
   const deviceHwid = useMemo(() => generateHWID(getDeviceFingerprint()), []);
 
   useEffect(() => {
-    // Initial data sync
-    fetch('/api/sync')
-      .then(r => r.json())
-      .then(data => {
-        syncLock.current = true;
-        for (const k in data) {
-          window.dispatchEvent(new CustomEvent(`sync-update-${k}`, { detail: data[k].data }));
-        }
-        syncLock.current = false;
-        setServerInitialized(true);
-      })
-      .catch(e => {
-        console.error('Failed to sync', e);
-        setServerInitialized(true);
-      });
-
-    // Session auto-restore and unlock logic based on HWID
+    // Tenta desbloquear automaticamente se o HWID deste dispositivo já possui uma chave ativa no banco
     if (deviceHwid) {
       setIsRestoringSession(true);
       fetch('/api/license/check-hwid', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ hwid: deviceHwid, key: '' })
+        body: JSON.stringify({ hwid: deviceHwid })
       })
       .then(res => res.json())
       .then(data => {
         if (data.valid) {
           setIsUnlocked(true);
-        } else {
-          // If validity fails on server but matches VALID_ACCESS_KEYS, unlock. (Fallback)
-          if (VALID_ACCESS_KEYS.includes('')) setIsUnlocked(true);
+          // Após desbloquear o hardware, tenta restaurar a sessão do usuário (F5 persistence)
+          return fetch(`/api/auth/session/${deviceHwid}`);
         }
-        // Attempt to load session
-        return fetch(`/api/auth/session/${deviceHwid}`);
+        return null;
       })
-      .then(res => res.json())
+      .then(res => res ? res.json() : null)
       .then(sessionData => {
         if (sessionData && sessionData.user) {
           setUser(sessionData.user);
+          // Restaurar vista baseada no cargo
           if (sessionData.user.role === 'atendente') {
             setCurrentView('sales');
           } else {
@@ -367,93 +404,14 @@ const App = () => {
           }
         }
       })
-      .catch(err => console.error("Error checking session/license:", err))
-      .finally(() => setIsRestoringSession(false));
+      .catch(err => console.error("Erro ao verificar sessão automática:", err))
+      .finally(() => {
+        setIsRestoringSession(false);
+      });
     } else {
       setIsRestoringSession(false);
     }
-
-    // --- Real-time synchronization ---
-    // 1. Same-device tab-to-tab sync (100% API free, instant)
-    syncBroadcastChannel = new BroadcastChannel('scardsys_sync');
-    syncBroadcastChannel.onmessage = (event) => {
-      const message = event.data;
-      if (message.type === 'update' && message.key) {
-         syncLock.current = true;
-         window.dispatchEvent(new CustomEvent(`sync-update-${message.key}`, { detail: message.data }));
-         setTimeout(() => { syncLock.current = false; }, 100);
-      }
-    };
-
-    // 2. Cross-device machine-to-machine sync (Free Public MQTT Ping + 1 Fetch)
-    // Using a static room name so it works across AI Studio and Vercel domains.
-    currentSyncTopic = `scardsys_sync_room_global_diego`;
-    currentDeviceHwid = deviceHwid;
-    
-    syncMqttClient = mqtt.connect('wss://broker.emqx.io:8084/mqtt');
-    syncMqttClient.on('connect', () => {
-      syncMqttClient?.subscribe(currentSyncTopic);
-    });
-    
-    syncMqttClient.on('message', (topic, message) => {
-      try {
-        const payload = JSON.parse(message.toString());
-        if (payload.type === 'ping' && payload.key && payload.sender !== deviceHwid) {
-          // Received ping from another terminal. Fetch only the updated module to save data!
-          fetch(`/api/sync/${payload.key}`)
-            .then(res => res.json())
-            .then(data => {
-              if (data && data.data) {
-                 syncLock.current = true;
-                 window.dispatchEvent(new CustomEvent(`sync-update-${payload.key}`, { detail: data.data }));
-                 setTimeout(() => { syncLock.current = false; }, 100);
-              }
-            }).catch(e => console.error("MQTT Sync fetch error", e));
-        }
-      } catch(e) {}
-    });
-
-    return () => {
-      syncBroadcastChannel?.close();
-      syncMqttClient?.end();
-    };
-  }, []);
-
-  const usePersistedState = <T,>(key: string, initial: T): [T, React.Dispatch<React.SetStateAction<T>>] => {
-    const [state, setState] = useState<T>(initial);
-
-    useEffect(() => {
-      const handler = (e: any) => {
-        if (key === 'db_settings') {
-          setState({ ...initial, ...e.detail, cardFees: { ...(initial as any).cardFees, ...(e.detail?.cardFees || {}) } } as T);
-        } else {
-          setState(e.detail);
-        }
-      };
-      window.addEventListener(`sync-update-${key}`, handler);
-      return () => window.removeEventListener(`sync-update-${key}`, handler);
-    }, [key]);
-
-    useEffect(() => {
-      if (syncLock.current || !serverInitialized) return;
-      
-      // Local tab-to-tab update instantly
-      syncBroadcastChannel?.postMessage({ type: 'update', key, data: state });
-      
-      // Global terminal-to-terminal ping via MQTT
-      if (syncMqttClient?.connected && currentSyncTopic) {
-        syncMqttClient.publish(currentSyncTopic, JSON.stringify({ type: 'ping', key, sender: currentDeviceHwid }));
-      }
-
-      fetch(`/api/sync/${key}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(state)
-      }).catch(err => console.error('Sync error:', err));
-    }, [key, state, serverInitialized]);
-
-    return [state, setState];
-  };
+  }, [deviceHwid]);
 
   const [dbUsers, setDbUsers] = usePersistedState<User[]>('db_users', []);
   const [customers, setCustomers] = usePersistedState<Customer[]>('db_customers', []);
@@ -467,7 +425,6 @@ const App = () => {
   const [cashHistory, setCashHistory] = usePersistedState<CashHistoryEntry[]>('db_cash_history', []);
   const [settings, setSettings] = usePersistedState<AppSettings>('db_settings', DEFAULT_SETTINGS);
   const [exchangeCredit, setExchangeCredit] = usePersistedState<number>('db_exchange_credit', 0);
-  const [keyRegistrations, setKeyRegistrations] = usePersistedState<Record<string, string>>('db_key_registrations', {});
   const [fiados, setFiados] = usePersistedState<FiadoRecord[]>('db_fiados', []);
   const [commTiers, setCommTiers] = usePersistedState<CommissionTier[]>('db_comm_tiers', [
     { min: 0, rate: 1 },
@@ -492,45 +449,34 @@ const App = () => {
   const handleVerifyAccessKey = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsValidating(true);
+    setAuthError('');
     const trimmedKey = accessKeyInput.trim();
 
     try {
-      const res = await fetch('/api/license/validate', {
+      const response = await fetch('/api/license/validate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ key: trimmedKey, hwid: deviceHwid })
       });
-      const data = await res.json();
       
-      if (res.ok && data.valid) {
-        if (!keyRegistrations[trimmedKey]) {
-          setKeyRegistrations(prev => ({ ...prev, [trimmedKey]: deviceHwid }));
-        }
-
+      const data = await response.json();
+      
+      if (data.valid) {
         setIsUnlocked(true);
       } else {
-        alert(data.message || 'Chave de acesso inválida ou expirada no Servidor.');
+        setAuthError(data.message || 'Chave de acesso inválida.');
         setAccessKeyInput('');
       }
-    } catch(err) {
-      // Fallback local if DB fail
-      if (VALID_ACCESS_KEYS.includes(trimmedKey)) {
-        const registeredHwid = keyRegistrations[trimmedKey];
-        if (registeredHwid && registeredHwid !== deviceHwid) {
-          alert('ERRO DE SEGURANÇA: Esta licença/chave já está vinculada a outro dispositivo.');
-        } else {
-          if (!registeredHwid) setKeyRegistrations(prev => ({ ...prev, [trimmedKey]: deviceHwid }));
-          setIsUnlocked(true);
-        }
-      } else {
-         alert('Falha na validação com o servidor e chave local inválida.');
-      }
+    } catch (e) {
+      setAuthError('Erro de conexão ao verificar a licença. Verifique sua rede.');
+    } finally {
+      setIsValidating(false);
     }
-    setIsValidating(false);
   };
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
+    setAuthError('');
     const form = e.target as HTMLFormElement;
     const email = (form.elements.namedItem('email') as HTMLInputElement).value;
     const password = (form.elements.namedItem('password') as HTMLInputElement).value;
@@ -569,7 +515,7 @@ const App = () => {
         setCurrentView('dashboard');
       }
     } else { 
-      alert('E-mail ou senha incorretos!'); 
+      setAuthError('E-mail ou senha incorretos!'); 
     }
   };
 
@@ -757,6 +703,16 @@ const App = () => {
             <p className="text-slate-500 font-black uppercase text-[9px] tracking-[0.3em]">Hardware Access Protection</p>
           </div>
 
+          {authError && (
+            <div className="mb-6 p-4 rounded-2xl bg-red-950/50 border border-red-900/50 animate-in fade-in slide-in-from-top-2">
+              <div className="flex items-center gap-3 justify-center text-red-500 mb-1">
+                <AlertTriangle size={16} />
+                <span className="text-[10px] font-black uppercase tracking-widest leading-none mt-0.5">Erro de Validação</span>
+              </div>
+              <p className="text-red-400/80 text-xs font-bold leading-relaxed">{authError}</p>
+            </div>
+          )}
+
           <form onSubmit={handleVerifyAccessKey} className="space-y-6">
             <div className="space-y-2 text-left">
               <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block ml-1 text-center">Insira sua Chave de Acesso</label>
@@ -813,6 +769,17 @@ const App = () => {
             <h1 className="text-5xl font-black text-slate-800 tracking-tighter italic mb-2">SCARD<span className="text-indigo-600">SYS</span></h1>
             <p className="text-slate-400 font-black uppercase text-[10px] tracking-[0.2em]">Enterprise Solution</p>
           </div>
+
+          {authError && (
+            <div className="mb-6 p-4 rounded-2xl bg-red-50 border border-red-100 animate-in fade-in slide-in-from-top-2">
+              <div className="flex items-center gap-3 justify-center text-red-600 mb-1">
+                <AlertTriangle size={16} />
+                <span className="text-[10px] font-black uppercase tracking-widest leading-none mt-0.5">Falha no Login</span>
+              </div>
+              <p className="text-red-500/80 text-xs font-bold leading-relaxed text-center">{authError}</p>
+            </div>
+          )}
+
           {authMode === 'login' ? (
             <form onSubmit={handleLogin} className="space-y-5">
               <div className="space-y-1.5">
@@ -4871,12 +4838,121 @@ const TeamViewComponent = ({ currentUser, users, setUsers }: any) => {
 
 import { SpeedInsights } from "@vercel/speed-insights/react";
 
-const rootElement = document.getElementById('root');
-if (rootElement) {
-  createRoot(rootElement).render(
+const DataProvider = () => {
+  const [loaded, setLoaded] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Carregar dados iniciais
+    fetch('/api/sync')
+      .then(async (res) => {
+         if (!res.ok) {
+            const txt = await res.text();
+            throw new Error(`HTTP ${res.status} - ${txt}`);
+         }
+         return res.json();
+      })
+      .then(data => {
+        Object.assign(globalStoreData, data);
+        setLoaded(true);
+      })
+      .catch(e => {
+        console.error('Failed to load DB sync', e);
+        setError(e instanceof Error ? e.message : String(e));
+      });
+
+    // Configurar WebSocket para Sincronização em Tempo Real com Reconexão
+    const setupWS = () => {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const ws = new WebSocket(`${protocol}//${window.location.host}`);
+
+      ws.onmessage = (event) => {
+        try {
+          const message = JSON.parse(event.data);
+          if (message.type === 'update') {
+            globalStoreData[message.key] = { data: message.data, updatedAt: message.updatedAt };
+            window.dispatchEvent(new CustomEvent('store-update', { 
+              detail: { key: message.key, data: message.data, updatedAt: message.updatedAt } 
+            }));
+          }
+        } catch (e) {
+          console.error("Erro ao processar mensagem WS:", e);
+        }
+      };
+
+      ws.onclose = () => {
+        console.log("WebSocket desconectado. Tentando reconectar em 10 segundos...");
+        setTimeout(setupWS, 10000);
+      };
+
+      ws.onerror = (err) => {
+        console.error("Erro no WebSocket:", err);
+        ws.close();
+      };
+
+      return ws;
+    };
+
+    const wsInstance = setupWS();
+
+    // Polling de fallback (acada 5 segundos) para sincronizar entre diferentes servidores (Vercel vs AI Studio)
+    const pollInterval = setInterval(() => {
+       fetch('/api/sync')
+         .then(res => res.json())
+         .then(newData => {
+           Object.entries(newData).forEach(([key, value]: [string, any]) => {
+             const currentLocal = globalStoreData[key];
+             if (!currentLocal || value.updatedAt > (currentLocal.updatedAt || 0)) {
+               globalStoreData[key] = value;
+               window.dispatchEvent(new CustomEvent('store-update', { 
+                 detail: { key, data: value.data, updatedAt: value.updatedAt } 
+               }));
+             }
+           });
+         })
+         .catch(e => console.warn("Erro no polling de sincronização:", e));
+    }, 5000);
+
+    return () => {
+      wsInstance.close();
+      clearInterval(pollInterval);
+    };
+  }, []);
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-zinc-950 flex flex-col items-center justify-center p-6 text-center">
+        <ShieldIcon size={48} className="text-red-600 mb-4 animate-pulse"/>
+        <h1 className="text-white font-black text-xl mb-2">ERRO DE CONEXÃO COM O BANCO</h1>
+        <p className="text-zinc-400 text-sm max-w-sm mb-4">
+          Não foi possível conectar ao banco de dados Vercel Postgres. 
+          Verifique o servidor e o arquivo .env.
+        </p>
+        <p className="text-red-400 font-mono text-xs max-w-lg break-all bg-red-950/50 p-4 rounded-xl border border-red-900 border-dashed">{error}</p>
+      </div>
+    );
+  }
+
+  if (!loaded) {
+    return (
+      <div className="min-h-screen bg-zinc-950 flex flex-col gap-4 items-center justify-center p-6 text-center">
+        <div className="w-10 h-10 border-4 border-red-900 border-t-red-600 rounded-full animate-spin"></div>
+        <p className="text-red-600/50 text-[10px] uppercase font-black tracking-widest animate-pulse">Sincronizando Banco de Dados...</p>
+      </div>
+    );
+  }
+
+  return (
     <>
       <App />
       <SpeedInsights />
     </>
   );
+};
+
+const rootElement = document.getElementById('root');
+if (rootElement) {
+  const root = (window as any)._root || createRoot(rootElement);
+  (window as any)._root = root;
+  root.render(<DataProvider />);
 }
