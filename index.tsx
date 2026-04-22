@@ -470,7 +470,7 @@ const App = () => {
       });
       const data = await res.json();
       
-      if (data.valid) {
+      if (res.ok && data.valid) {
         if (!keyRegistrations[trimmedKey]) {
           setKeyRegistrations(prev => ({ ...prev, [trimmedKey]: deviceHwid }));
         }

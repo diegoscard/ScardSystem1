@@ -165,7 +165,7 @@ app.post("/api/license/check-hwid", async (req, res) => {
     if (!hwid) return res.json({ valid: false });
     
     // Check if any active key is registered to this HWID
-    const result = await pool.query('SELECT * FROM "keys" WHERE hwid = $1 AND status = \'active\'', [hwid]);
+    const result = await pool.query('SELECT * FROM "keys" WHERE hwid = $1', [hwid]);
     
     if (result.rows.length === 0) {
       return res.json({ valid: false });
@@ -188,7 +188,7 @@ app.post("/api/license/validate", async (req, res) => {
   try {
     const { key, hwid } = req.body;
     // Uses the new "keys" table according to the image
-    const result = await pool.query('SELECT * FROM "keys" WHERE key_value = $1 AND status = \'active\'', [key]);
+    const result = await pool.query('SELECT * FROM "keys" WHERE key_value = $1', [key]);
     
     if (result.rows.length === 0) {
       return res.json({ valid: false, message: 'Chave inválida ou inativa no banco central' });
@@ -215,7 +215,7 @@ app.post("/api/license/validate", async (req, res) => {
     return res.json({ valid: true });
   } catch (error) {
     console.error("Erro na validação de licença:", error);
-    res.status(500).json({ error: 'DB Error no servidor ou tabela keys não encontrada' });
+    res.status(500).json({ error: 'DB Error no servidor ou tabela keys não encontrada', message: error instanceof Error ? error.message : 'Unknown error' });
   }
 });
 
