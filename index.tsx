@@ -386,9 +386,8 @@ const App = () => {
     };
 
     // 2. Cross-device machine-to-machine sync (Free Public MQTT Ping + 1 Fetch)
-    // Hashing host to create a private-ish room.
-    const hostHash = Math.abs(window.location.host.split('').reduce((a,b)=>{a=((a<<5)-a)+b.charCodeAt(0);return a&a},0)).toString(36);
-    currentSyncTopic = `scardsys_sync_room_${hostHash}`;
+    // Using a static room name so it works across AI Studio and Vercel domains.
+    currentSyncTopic = `scardsys_sync_room_global_diego`;
     currentDeviceHwid = deviceHwid;
     
     syncMqttClient = mqtt.connect('wss://broker.emqx.io:8084/mqtt');
