@@ -2207,9 +2207,9 @@ const CustomerManagementView = ({ customers, setCustomers, sales, settings, setC
                 <div className="col-span-2 space-y-1">
                   <label className="text-[9px] font-black text-slate-400 uppercase ml-1">Endereço (Via CEP)</label>
                   <textarea 
-                    readOnly
-                    className="w-full rounded-xl border-2 border-slate-100 px-4 py-3 text-slate-500 bg-slate-100 outline-none transition-all font-bold text-sm shadow-sm min-h-[80px] cursor-not-allowed"
+                    className="w-full rounded-xl border-2 border-slate-100 px-4 py-3 text-slate-800 bg-slate-50 focus:border-indigo-500 outline-none transition-all font-bold text-sm shadow-sm min-h-[80px]"
                     value={form.address || ''}
+                    onChange={e => setForm({ ...form, address: e.target.value })}
                     placeholder="O endereço aparecerá aqui após digitar o CEP"
                   />
                 </div>
