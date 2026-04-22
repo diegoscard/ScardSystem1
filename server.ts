@@ -15,10 +15,11 @@ const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 
 app.use(cors());
-app.use(express.json({ limit: '50mb' }));
+app.use(express.json({ limit: '50mb', strict: false }));
 
 const pool = new Pool({
   connectionString: process.env.POSTGRES_URL,
+  max: 1,
   ssl: {
     rejectUnauthorized: false
   }
