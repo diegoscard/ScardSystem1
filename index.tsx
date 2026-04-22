@@ -321,7 +321,6 @@ const App = () => {
       .then(data => {
         syncLock.current = true;
         for (const k in data) {
-          localStorage.setItem(k, JSON.stringify(data[k].data));
           window.dispatchEvent(new CustomEvent(`sync-update-${k}`, { detail: data[k].data }));
         }
         syncLock.current = false;
@@ -338,7 +337,7 @@ const App = () => {
       fetch('/api/license/check-hwid', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ hwid: deviceHwid, key: localStorage.getItem('scard_saved_access_key') || '' })
+        body: JSON.stringify({ hwid: deviceHwid, key: '' })
       })
       .then(res => res.json())
       .then(data => {
@@ -346,7 +345,7 @@ const App = () => {
           setIsUnlocked(true);
         } else {
           // If validity fails on server but matches VALID_ACCESS_KEYS, unlock. (Fallback)
-          if (VALID_ACCESS_KEYS.includes(localStorage.getItem('scard_saved_access_key') || '')) setIsUnlocked(true);
+          if (VALID_ACCESS_KEYS.includes('')) setIsUnlocked(true);
         }
         // Attempt to load session
         return fetch(`/api/auth/session/${deviceHwid}`);
@@ -378,7 +377,6 @@ const App = () => {
         const message = JSON.parse(event.data);
         if (message.type === 'update' && message.key) {
            syncLock.current = true;
-           localStorage.setItem(message.key, JSON.stringify(message.data));
            window.dispatchEvent(new CustomEvent(`sync-update-${message.key}`, { detail: message.data }));
            // Small delay to prevent echo writes back to the server
            setTimeout(() => { syncLock.current = false; }, 100);
@@ -392,39 +390,27 @@ const App = () => {
   }, []);
 
   const usePersistedState = <T,>(key: string, initial: T): [T, React.Dispatch<React.SetStateAction<T>>] => {
-    const [state, setState] = useState<T>(() => {
-      const stored = localStorage.getItem(key);
-      try {
-        if (!stored) return initial;
-        const parsed = JSON.parse(stored);
-        if (key === 'db_settings') {
-          const initialAny = initial as any;
-          return { ...initial, ...parsed, cardFees: { ...initialAny.cardFees, ...(parsed.cardFees || {}) } } as T;
-        }
-        return parsed;
-      } catch (e) {
-        return initial;
-      }
-    });
+    const [state, setState] = useState<T>(initial);
 
     useEffect(() => {
       const handler = (e: any) => {
-        setState(e.detail);
+        if (key === 'db_settings') {
+          setState({ ...initial, ...e.detail, cardFees: { ...(initial as any).cardFees, ...(e.detail?.cardFees || {}) } } as T);
+        } else {
+          setState(e.detail);
+        }
       };
       window.addEventListener(`sync-update-${key}`, handler);
       return () => window.removeEventListener(`sync-update-${key}`, handler);
     }, [key]);
 
     useEffect(() => {
-      if (syncLock.current) return;
-      localStorage.setItem(key, JSON.stringify(state));
-      if (serverInitialized) {
-        fetch(`/api/sync/${key}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(state)
-        }).catch(err => console.error('Sync error:', err));
-      }
+      if (syncLock.current || !serverInitialized) return;
+      fetch(`/api/sync/${key}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(state)
+      }).catch(err => console.error('Sync error:', err));
     }, [key, state, serverInitialized]);
 
     return [state, setState];
@@ -444,6 +430,13 @@ const App = () => {
   const [exchangeCredit, setExchangeCredit] = usePersistedState<number>('db_exchange_credit', 0);
   const [keyRegistrations, setKeyRegistrations] = usePersistedState<Record<string, string>>('db_key_registrations', {});
   const [fiados, setFiados] = usePersistedState<FiadoRecord[]>('db_fiados', []);
+  const [commTiers, setCommTiers] = usePersistedState<CommissionTier[]>('db_comm_tiers', [
+    { min: 0, rate: 1 },
+    { min: 20000, rate: 2 },
+    { min: 30000, rate: 3 },
+    { min: 40000, rate: 4 },
+    { min: 50000, rate: 5 }
+  ]);
   const [currentView, setCurrentView] = useState('dashboard');
   
   const [pdvState, setPdvState] = useState({
@@ -475,9 +468,6 @@ const App = () => {
           setKeyRegistrations(prev => ({ ...prev, [trimmedKey]: deviceHwid }));
         }
 
-        if (rememberKey) {
-          localStorage.setItem('scard_saved_access_key', trimmedKey);
-        }
         setIsUnlocked(true);
       } else {
         alert(data.message || 'Chave de acesso inválida ou expirada no Servidor.');
@@ -491,7 +481,6 @@ const App = () => {
           alert('ERRO DE SEGURANÇA: Esta licença/chave já está vinculada a outro dispositivo.');
         } else {
           if (!registeredHwid) setKeyRegistrations(prev => ({ ...prev, [trimmedKey]: deviceHwid }));
-          if (rememberKey) localStorage.setItem('scard_saved_access_key', trimmedKey);
           setIsUnlocked(true);
         }
       } else {
@@ -572,49 +561,48 @@ const App = () => {
     setAuthMode('login');
   };
 
-  const handleExportBackup = () => {
-    const dataKeys = [
-      'db_users', 'db_products', 'db_suppliers', 'db_categories', 
-      'db_movements', 'db_sales', 'db_cash_session', 'db_cash_history', 
-      'db_settings', 'db_exchange_credit', 'db_campaigns', 'db_key_registrations', 'db_fiados', 'db_customers'
-    ];
-    
-    const backupData: Record<string, any> = {};
-    dataKeys.forEach(key => {
-      const stored = localStorage.getItem(key);
-      backupData[key] = stored ? JSON.parse(stored) : null;
-    });
+  const handleExportBackup = async () => {
+    try {
+      const dbRes = await fetch('/api/sync');
+      const data = await dbRes.json();
+      const backupData: Record<string, any> = {};
+      for (const k in data) {
+         backupData[k] = data[k].data;
+      }
 
-    const jsonString = JSON.stringify(backupData);
-    const encodedData = btoa(unescape(encodeURIComponent(jsonString)));
-    const secureContent = `SCARDSYS_SECURE_BKPV1:${encodedData}`;
+      const jsonString = JSON.stringify(backupData);
+      const encodedData = btoa(unescape(encodeURIComponent(jsonString)));
+      const secureContent = `SCARDSYS_SECURE_BKPV1:${encodedData}`;
 
-    const blob = new Blob([secureContent], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    
-    const now = new Date();
-    const day = String(now.getDate()).padStart(2, '0');
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const year = now.getFullYear();
-    const datePart = `${day}-${month}-${year}`;
-    
-    const hours = String(now.getHours()).padStart(2, '0');
-    const minutes = String(now.getMinutes()).padStart(2, '0');
-    const seconds = String(now.getSeconds()).padStart(2, '0');
-    const timePart = `${hours}-${minutes}-${seconds}`;
-    
-    const fileName = `backup_scardsys_${datePart}_${timePart}.json`;
+      const blob = new Blob([secureContent], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      
+      const now = new Date();
+      const day = String(now.getDate()).padStart(2, '0');
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const year = now.getFullYear();
+      const datePart = `${day}-${month}-${year}`;
+      
+      const hours = String(now.getHours()).padStart(2, '0');
+      const minutes = String(now.getMinutes()).padStart(2, '0');
+      const seconds = String(now.getSeconds()).padStart(2, '0');
+      const timePart = `${hours}-${minutes}-${seconds}`;
+      
+      const fileName = `backup_scardsys_${datePart}_${timePart}.json`;
 
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = fileName;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch(err) {
+      alert("Erro ao exportar backup.");
+    }
   };
 
-  const handleImportBackup = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImportBackup = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -623,7 +611,7 @@ const App = () => {
     }
 
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
       try {
         const content = event.target?.result as string;
         if (!content.startsWith('SCARDSYS_SECURE_BKPV1:')) {
@@ -632,11 +620,17 @@ const App = () => {
         const encodedData = content.replace('SCARDSYS_SECURE_BKPV1:', '');
         const decodedString = decodeURIComponent(escape(atob(encodedData)));
         const data = JSON.parse(decodedString);
-        Object.entries(data).forEach(([key, value]) => {
+        
+        for (const [key, value] of Object.entries(data)) {
           if (value !== null) {
-            localStorage.setItem(key, JSON.stringify(value));
+            await fetch(`/api/sync/${key}`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(value)
+            });
           }
-        });
+        }
+        
         alert("Backup restaurado com sucesso! O sistema será reiniciado.");
         window.location.reload();
       } catch (err) {
@@ -1000,7 +994,7 @@ const App = () => {
             <CampaignsViewComponent campaigns={campaigns} setCampaigns={setCampaigns} products={products} />
           )}
           {currentView === 'dashboard' && (
-            <DashboardViewComponent products={products} sales={sales} cashSession={cashSession} fiados={fiados} cashHistory={cashHistory} />
+            <DashboardViewComponent products={products} sales={sales} cashSession={cashSession} fiados={fiados} cashHistory={cashHistory} commTiers={commTiers} setCommTiers={setCommTiers} />
           )}
           {currentView === 'reports' && (
             <ReportsViewComponent 
@@ -3722,28 +3716,13 @@ const StockManagementView = ({ products, setProducts, categories, setCategories 
 
 // --- COMPONENTE DASHBOARD ---
 
-const DashboardViewComponent = ({ products, sales, cashSession, fiados, cashHistory }: any) => {
+const DashboardViewComponent = ({ products, sales, cashSession, fiados, cashHistory, commTiers, setCommTiers }: any) => {
   const [period, setPeriod] = useState<'day' | 'month' | 'year'>('day');
   const [selectedDay, setSelectedDay] = useState(new Date().toISOString().slice(0, 10));
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear().toString());
   
   const [commFilterMonth, setCommFilterMonth] = useState(new Date().toISOString().slice(0, 7));
-  
-  const [commTiers, setCommTiers] = useState<CommissionTier[]>(() => {
-    const saved = localStorage.getItem('dash_comm_tiers');
-    return saved ? JSON.parse(saved) : [
-      { min: 0, rate: 1 },
-      { min: 20000, rate: 2 },
-      { min: 30000, rate: 3 },
-      { min: 40000, rate: 4 },
-      { min: 50000, rate: 5 }
-    ];
-  });
-
-  useEffect(() => {
-    localStorage.setItem('dash_comm_tiers', JSON.stringify(commTiers));
-  }, [commTiers]);
 
   const filteredSales = useMemo(() => {
     return sales.filter((s: Sale) => {
