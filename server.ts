@@ -20,6 +20,8 @@ app.use(express.json({ limit: '50mb', strict: false }));
 const pool = new Pool({
   connectionString: process.env.POSTGRES_URL,
   max: 1,
+  idleTimeoutMillis: 100, // Close idle connections extremely quickly
+  connectionTimeoutMillis: 3000,
   ssl: {
     rejectUnauthorized: false
   }
