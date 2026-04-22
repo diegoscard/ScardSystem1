@@ -891,8 +891,8 @@ const App = () => {
             </button>
           )}
           <button type="button" onClick={() => { 
-            setIsUnlocked(false); 
             setUser(null); 
+            setAuthError('');
             fetch('/api/auth/session', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ hwid: deviceHwid, user: null }) });
           }} className="flex items-center space-x-3 text-slate-500 hover:text-red-400 transition-all w-full px-4 py-3 rounded-xl hover:bg-red-500/5 group">
             <LogOut size={18} />
