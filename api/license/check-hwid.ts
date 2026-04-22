@@ -41,6 +41,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const license = result.rows[0];
     
+    // Status check
+    if (license.status !== 'active') {
+      return res.status(200).json({ valid: false });
+    }
+    
     // Expiry check
     if (license.expires_at && new Date(license.expires_at) < new Date()) {
       return res.status(200).json({ valid: false });

@@ -172,6 +172,11 @@ app.post("/api/license/check-hwid", async (req, res) => {
     }
 
     const license = result.rows[0];
+
+    // Status check
+    if (license.status !== 'active') {
+      return res.json({ valid: false });
+    }
     
     // Expiry check
     if (license.expires_at && new Date(license.expires_at) < new Date()) {
@@ -196,6 +201,16 @@ app.post("/api/license/validate", async (req, res) => {
 
     const license = result.rows[0];
     
+    // Status check
+    if (license.status !== 'active') {
+      return res.json({ valid: false, message: 'Ops! Sua Licença está inativa ou expirada!' });
+    }
+
+    // Expiry check - using "expires_at" from the image
+    if (license.expires_at && new Date(license.expires_at) < new Date()) {
+      return res.json({ valid: false, message: 'Ops! Sua Licença Expirou!' });
+    }
+
     // First time use: register HWID in "hwid" column
     if (!license.hwid) {
       await pool.query('UPDATE "keys" SET hwid = $1 WHERE key_value = $2', [hwid, key]);
@@ -205,11 +220,6 @@ app.post("/api/license/validate", async (req, res) => {
     // Validate existing HWID
     if (license.hwid !== hwid) {
       return res.json({ valid: false, message: 'Chave já registrada em outro dispositivo' });
-    }
-
-    // Expiry check - using "expires_at" from the image
-    if (license.expires_at && new Date(license.expires_at) < new Date()) {
-      return res.json({ valid: false, message: 'Licença expirada' });
     }
 
     return res.json({ valid: true });

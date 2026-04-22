@@ -40,6 +40,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const license = result.rows[0];
     
+    // Status check
+    if (license.status !== 'active') {
+      return res.status(200).json({ valid: false, message: 'Ops! Sua Licença está inativa ou expirada!' });
+    }
+
+    // Expiry check
+    if (license.expires_at && new Date(license.expires_at) < new Date()) {
+      return res.status(200).json({ valid: false, message: 'Ops! Sua Licença Expirou!' });
+    }
+
     // First time use: register HWID
     if (!license.hwid) {
       await pool.query('UPDATE "keys" SET hwid = $1 WHERE key_value = $2', [hwid, key]);
@@ -49,11 +59,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Validate existing HWID
     if (license.hwid !== hwid) {
       return res.status(200).json({ valid: false, message: 'Chave já registrada em outro dispositivo. Contate o suporte.' });
-    }
-
-    // Expiry check
-    if (license.expires_at && new Date(license.expires_at) < new Date()) {
-      return res.status(200).json({ valid: false, message: 'Ops, Sua Licença Expirou!' });
     }
 
     return res.status(200).json({ valid: true });
