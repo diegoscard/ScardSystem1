@@ -24,6 +24,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return;
   }
 
+  if (req.method === 'GET') {
+    try {
+      const key = req.query.key as string;
+      const result = await pool.query('SELECT data, updated_at FROM store_data WHERE store_key = $1', [key]);
+      if (result.rows.length > 0) {
+        return res.status(200).json({
+          data: result.rows[0].data,
+          updatedAt: result.rows[0].updated_at ? Number(result.rows[0].updated_at) : Date.now()
+        });
+      } else {
+        return res.status(404).json({ error: 'Not found' });
+      }
+    } catch (error) {
+      console.error(error);
+      return res.status(500).json({ error: 'DB Error' });
+    }
+  }
+
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }

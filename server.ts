@@ -137,6 +137,23 @@ app.get("/api/sync", async (req, res) => {
   }
 });
 
+app.get("/api/sync/:key", async (req, res) => {
+  try {
+    const { key } = req.params;
+    const result = await pool.query('SELECT data, updated_at FROM store_data WHERE store_key = $1', [key]);
+    if (result.rows.length > 0) {
+      res.json({
+        data: result.rows[0].data,
+        updatedAt: result.rows[0].updated_at ? Number(result.rows[0].updated_at) : Date.now()
+      });
+    } else {
+      res.status(404).json({ error: 'Not found' });
+    }
+  } catch (error) {
+    res.status(500).json({ error: 'DB Error' });
+  }
+});
+
 // Sync data endpoint
 app.post("/api/sync/:key", async (req, res) => {
   try {

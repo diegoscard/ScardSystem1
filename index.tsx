@@ -14,6 +14,12 @@ import {
   Printer, Check, Key, Shield, Monitor, UserPlus, HandCoins, Share2, FileText, Target,
   Cake, Bike
 } from 'lucide-react';
+import mqtt from 'mqtt';
+
+let syncBroadcastChannel: BroadcastChannel | null = null;
+let syncMqttClient: mqtt.MqttClient | null = null;
+let currentSyncTopic = '';
+let currentDeviceHwid = '';
 
 // --- CONFIGURAÇÃO DE SEGURANÇA (CHAVES DE ACESSO) ---
 const VALID_ACCESS_KEYS = [
@@ -367,25 +373,50 @@ const App = () => {
       setIsRestoringSession(false);
     }
 
-    // Real-time synchronization via WebSocket
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}`;
-    const ws = new WebSocket(wsUrl);
-
-    ws.onmessage = (event) => {
-      try {
-        const message = JSON.parse(event.data);
-        if (message.type === 'update' && message.key) {
-           syncLock.current = true;
-           window.dispatchEvent(new CustomEvent(`sync-update-${message.key}`, { detail: message.data }));
-           // Small delay to prevent echo writes back to the server
-           setTimeout(() => { syncLock.current = false; }, 100);
-        }
-      } catch (e) {}
+    // --- Real-time synchronization ---
+    // 1. Same-device tab-to-tab sync (100% API free, instant)
+    syncBroadcastChannel = new BroadcastChannel('scardsys_sync');
+    syncBroadcastChannel.onmessage = (event) => {
+      const message = event.data;
+      if (message.type === 'update' && message.key) {
+         syncLock.current = true;
+         window.dispatchEvent(new CustomEvent(`sync-update-${message.key}`, { detail: message.data }));
+         setTimeout(() => { syncLock.current = false; }, 100);
+      }
     };
 
+    // 2. Cross-device machine-to-machine sync (Free Public MQTT Ping + 1 Fetch)
+    // Hashing host to create a private-ish room.
+    const hostHash = Math.abs(window.location.host.split('').reduce((a,b)=>{a=((a<<5)-a)+b.charCodeAt(0);return a&a},0)).toString(36);
+    currentSyncTopic = `scardsys_sync_room_${hostHash}`;
+    currentDeviceHwid = deviceHwid;
+    
+    syncMqttClient = mqtt.connect('wss://broker.emqx.io:8084/mqtt');
+    syncMqttClient.on('connect', () => {
+      syncMqttClient?.subscribe(currentSyncTopic);
+    });
+    
+    syncMqttClient.on('message', (topic, message) => {
+      try {
+        const payload = JSON.parse(message.toString());
+        if (payload.type === 'ping' && payload.key && payload.sender !== deviceHwid) {
+          // Received ping from another terminal. Fetch only the updated module to save data!
+          fetch(`/api/sync/${payload.key}`)
+            .then(res => res.json())
+            .then(data => {
+              if (data && data.data) {
+                 syncLock.current = true;
+                 window.dispatchEvent(new CustomEvent(`sync-update-${payload.key}`, { detail: data.data }));
+                 setTimeout(() => { syncLock.current = false; }, 100);
+              }
+            }).catch(e => console.error("MQTT Sync fetch error", e));
+        }
+      } catch(e) {}
+    });
+
     return () => {
-      ws.close();
+      syncBroadcastChannel?.close();
+      syncMqttClient?.end();
     };
   }, []);
 
@@ -406,6 +437,15 @@ const App = () => {
 
     useEffect(() => {
       if (syncLock.current || !serverInitialized) return;
+      
+      // Local tab-to-tab update instantly
+      syncBroadcastChannel?.postMessage({ type: 'update', key, data: state });
+      
+      // Global terminal-to-terminal ping via MQTT
+      if (syncMqttClient?.connected && currentSyncTopic) {
+        syncMqttClient.publish(currentSyncTopic, JSON.stringify({ type: 'ping', key, sender: currentDeviceHwid }));
+      }
+
       fetch(`/api/sync/${key}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
