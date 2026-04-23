@@ -5,7 +5,7 @@ import { useStore } from '../contexts/StoreContext';
 import { DEFAULT_SETTINGS } from '../utils/constants';
 
 const SettingsViewComponent = () => {
-  const { settings, setSettings, categories, setCategories, products, setProducts } = useStore();
+  const { settings, setSettings, categories, setCategories, products, setProducts, notify } = useStore();
   const [localSettings, setLocalSettings] = useState<AppSettings>({ 
     maxGlobalDiscount: settings?.maxGlobalDiscount ?? 10, 
     cardFees: { 
@@ -20,7 +20,7 @@ const SettingsViewComponent = () => {
     storeName: settings?.storeName ?? DEFAULT_SETTINGS.storeName,
     storeTagline: settings?.storeTagline ?? DEFAULT_SETTINGS.storeTagline
   });
-  const handleSave = () => { setSettings(localSettings); alert('Ajustes salvos!'); };
+  const handleSave = () => { setSettings(localSettings); notify('Configurações atualizadas com sucesso!', 'success'); };
   const togglePermission = (viewId: string) => { const perms = (localSettings.sellerPermissions || []).includes(viewId) ? localSettings.sellerPermissions.filter(p => p !== viewId) : [...(localSettings.sellerPermissions || []), viewId]; setLocalSettings({ ...localSettings, sellerPermissions: perms }); };
   return (
     <div className="space-y-8 animate-in fade-in">

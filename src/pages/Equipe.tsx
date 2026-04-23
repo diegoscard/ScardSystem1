@@ -4,7 +4,7 @@ import { User, UserRole } from '../types';
 import { useStore } from '../contexts/StoreContext';
 
 const TeamViewComponent = () => {
-  const { user: currentUser, dbUsers: users, setDbUsers: setUsers } = useStore();
+  const { user: currentUser, dbUsers: users, setDbUsers: setUsers, notify, confirm } = useStore();
   const [editModal, setEditModal] = useState<User | null>(null);
   const [showPass, setShowPass] = useState(false);
   
@@ -22,13 +22,22 @@ const TeamViewComponent = () => {
     if (isMaster) {
       setShowPass(true);
     } else {
-      alert("Apenas o usuário MASTER tem permissão para visualizar senhas cadastradas diretamente.");
+      notify("Apenas o usuário MASTER tem permissão para visualizar senhas diretamente.", "error");
     }
   };
 
-  const handleDeleteUser = (id: number) => { 
-    if (id === currentUser.id) return alert('Você não pode excluir seu próprio usuário!'); 
-    if (window.confirm('Excluir este colaborador?')) setUsers(users.filter((u: User) => u.id !== id)); 
+  const handleDeleteUser = async (id: number) => { 
+    if (id === currentUser.id) return notify('Você não pode excluir seu próprio usuário!', "warning"); 
+    
+    const ok = await confirm({
+        title: 'Excluir Colaborador',
+        message: 'Esta ação removerá permanentemente o acesso deste colaborador ao sistema.',
+        type: 'danger',
+        confirmLabel: 'Excluir',
+        cancelLabel: 'Manter'
+    });
+
+    if (ok) setUsers(users.filter((u: User) => u.id !== id)); 
   };
 
   const handleUpdateProfile = (e: React.FormEvent) => { 
@@ -39,11 +48,11 @@ const TeamViewComponent = () => {
 
     if (!isMaster && changingPass) {
       if (currentPassInput !== currentUser.password) {
-        alert("Sua senha atual está incorreta. Autorização negada para alteração.");
+        notify("Senha atual incorreta. Alteração negada.", "error");
         return;
       }
       if (!newPassInput.trim()) {
-        alert("Informe a nova senha desejada.");
+        notify("Por favor, informe a nova senha.", "warning");
         return;
       }
       updatedUser.password = newPassInput;
@@ -55,7 +64,7 @@ const TeamViewComponent = () => {
     setChangingPass(false);
     setCurrentPassInput('');
     setNewPassInput('');
-    alert('Perfil updated com sucesso!'); 
+    notify('Perfil atualizado com sucesso!', "success");
   };
 
   return (

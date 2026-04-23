@@ -5,7 +5,7 @@ import { useStore } from '../contexts/StoreContext';
 import { formatCurrency, parseCurrency } from '../utils/helpers';
 
 const StockManagementView = () => {
-  const { user, products, setProducts, categories, setCategories, movements, setMovements } = useStore();
+  const { user, products, setProducts, categories, setCategories, movements, setMovements, notify, confirm, prompt } = useStore();
   const [modal, setModal] = useState(false);
   const [summaryModal, setSummaryModal] = useState(false);
   const [summaryText, setSummaryText] = useState('');
@@ -40,8 +40,7 @@ const StockManagementView = () => {
   };
   const save = (e: any) => {
     e.preventDefault();
-    if (products.some((p: Product) => p.sku === form.sku && p.id !== form.id)) return alert('SKU duplicado!');
-    // Correct variable assignment typo
+    if (products.some((p: Product) => p.sku === form.sku && p.id !== form.id)) return notify('SKU duplicado detectado!', 'error');
     const id = form.id || Date.now();
     const p = { ...form, id, active: true, price: Number(form.price) || 0, cost: Number(form.cost) || 0, markup: Number(form.markup) || 1, stock: Number(form.stock) || 0, discountBlocked: !!form.discountBlocked };
     if (form.id) setProducts((prev: any) => prev.map((x: any) => x.id === id ? p : x));
@@ -73,7 +72,7 @@ const StockManagementView = () => {
 
   const generateWppSummary = () => {
     if (filteredProducts.length === 0) {
-      alert('Nenhum produto visível para gerar resumo!');
+      notify('Filtre alguns produtos para gerar o resumo.', 'warning');
       return;
     }
     const now = new Date().toLocaleDateString();
@@ -91,7 +90,7 @@ const StockManagementView = () => {
 
   const copyToClipboard = () => {
     navigator.clipboard.writeText(summaryText);
-    alert('Resumo copiado para a área de transferência!');
+    notify('Resumo copiado com sucesso!', 'success');
   };
 
   return (
@@ -202,7 +201,16 @@ const StockManagementView = () => {
                     <div className="flex justify-end gap-2">
                       <button onClick={() => handleClone(p)} className="p-2 text-slate-400 hover:text-green-600" title="Clonar"><Copy size={14}/></button>
                       <button onClick={() => { setForm(p); setModal(true); }} className={`p-2 transition-colors ${p.stock === 0 ? 'text-red-400 hover:text-red-600' : 'text-slate-400 hover:text-indigo-600'}`}><Edit size={14}/></button>
-                      <button onClick={() => setProducts(products.filter((x: any) => x.id !== p.id))} className="p-2 text-slate-400 hover:text-red-600"><Trash2 size={14}/></button>
+                      <button onClick={async () => {
+                        const ok = await confirm({
+                            title: 'Excluir Produto',
+                            message: `Deseja realmente remover o produto ${p.name}? Esta ação não pode ser desfeita.`,
+                            type: 'danger',
+                            confirmLabel: 'Sim, excluir',
+                            cancelLabel: 'Manter'
+                        });
+                        if (ok) setProducts(products.filter((x: any) => x.id !== p.id));
+                      }} className="p-2 text-slate-400 hover:text-red-600"><Trash2 size={14}/></button>
                     </div>
                   </td>
                 </tr>
@@ -226,11 +234,11 @@ const StockManagementView = () => {
                   </select>
                   <button 
                     type="button" 
-                    onClick={() => {
-                      const newCat = prompt('Digite o nome da nova categoria:');
+                    onClick={async () => {
+                      const newCat = await prompt({ title: 'Nova Categoria', message: 'Digite o nome da nova categoria:', placeholder: 'Ex: Acessórios' });
                       if (newCat && newCat.trim()) {
                         const trimmed = newCat.trim();
-                        if (categories.includes(trimmed)) return alert('Esta categoria já existe!');
+                        if (categories.includes(trimmed)) return notify('Esta categoria já existe!', 'warning');
                         setCategories([...categories, trimmed]);
                         setForm({...form, category: trimmed});
                       }
@@ -243,8 +251,16 @@ const StockManagementView = () => {
                   {form.category && form.category !== 'Sem Categoria' && (
                     <button 
                       type="button" 
-                      onClick={() => {
-                        if (window.confirm(`Remover "${form.category}"? Todos os produtos desta categoria serão movidos para "Sem Categoria".`)) {
+                      onClick={async () => {
+                        const ok = await confirm({ 
+                            title: 'Remover Categoria', 
+                            message: `Deseja remover "${form.category}"? Todos os produtos vinculados serão movidos para "Sem Categoria".`,
+                            type: 'danger',
+                            confirmLabel: 'Sim, remover',
+                            cancelLabel: 'Manter'
+                        });
+                        
+                        if (ok) {
                           const catToDelete = form.category;
                           setCategories(categories.filter((c: string) => c !== catToDelete));
                           setProducts((prev: Product[]) => prev.map(p => p.category === catToDelete ? { ...p, category: 'Sem Categoria' } : p ));

@@ -5,7 +5,7 @@ import { Product } from '../types';
 import { formatCurrency } from '../utils/helpers';
 
 export default function Consultar() {
-  const { products, categories } = useStore();
+  const { products, categories, notify } = useStore();
   const [search, setSearch] = useState('');
   const [isExact, setIsExact] = useState(false);
   const [filterCategory, setFilterCategory] = useState('Todas');
@@ -47,7 +47,7 @@ export default function Consultar() {
 
   const generateWppSummary = () => {
     if (filteredProducts.length === 0) {
-      alert('Nenhum produto visível para gerar resumo!');
+      notify('Filtre alguns produtos para gerar o resumo.', 'warning');
       return;
     }
     let text = `📦 *PEÇAS*\n`;
@@ -63,7 +63,7 @@ export default function Consultar() {
 
   const copyToClipboard = () => {
     navigator.clipboard.writeText(summaryText);
-    alert('Resumo copiado para a área de transferência!');
+    notify('Resumo copiado com sucesso!', 'success');
   };
 
   return (

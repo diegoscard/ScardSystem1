@@ -5,7 +5,7 @@ import { FiadoRecord, CashLog, CashSession } from '../types';
 import { formatCurrency, parseCurrency } from '../utils/helpers';
 
 export default function Pendentes() {
-  const { user, fiados, setFiados, cashSession, setCashSession, cashHistory } = useStore();
+  const { user, fiados, setFiados, cashSession, setCashSession, cashHistory, notify } = useStore();
   const [search, setSearch] = useState('');
   const [receivingModal, setReceivingModal] = useState<FiadoRecord | null>(null);
   const [receiveAmount, setReceiveAmount] = useState(0);
@@ -21,7 +21,7 @@ export default function Pendentes() {
     if (!receivingModal || !user) return;
 
     if (receiveAmount <= 0 || receiveAmount > receivingModal.remainingAmount + 0.01) {
-      alert('Valor inválido para recebimento.');
+      notify('Valor inválido para recebimento.', 'error');
       return;
     }
 
@@ -61,7 +61,7 @@ export default function Pendentes() {
        });
     }
 
-    alert(isFullyPaid ? 'Dívida quitada com sucesso!' : 'Pagamento parcial registrado!');
+    notify(isFullyPaid ? 'Dívida quitada com sucesso!' : 'Pagamento parcial registrado!', 'success');
     setReceivingModal(null);
     setReceiveAmount(0);
   };

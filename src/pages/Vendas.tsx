@@ -5,7 +5,7 @@ import { useStore } from '../contexts/StoreContext';
 import { formatCurrency, maskCPFCNPJ, maskPhone, maskDate, parseCurrency } from '../utils/helpers';
 
 const SalesViewComponent = ({ setCurrentView }: { setCurrentView: (view: string) => void }) => {
-  const { user, products, setProducts, setSales, setMovements, dbUsers: vendedores, cashSession, setCashSession, settings, exchangeCredit, setExchangeCredit, campaigns, setCampaigns, fiados, setFiados, customers, setCustomers, pdvState, setPdvState } = useStore();
+  const { user, products, setProducts, setSales, setMovements, dbUsers: vendedores, cashSession, setCashSession, settings, exchangeCredit, setExchangeCredit, campaigns, setCampaigns, fiados, setFiados, customers, setCustomers, pdvState, setPdvState, notify, confirm } = useStore();
   
   if (!user) return null;
   const isMasterUser = user.id === 0 || user.email === 'master@internal';
@@ -202,7 +202,7 @@ const SalesViewComponent = ({ setCurrentView }: { setCurrentView: (view: string)
   const addDirectly = useCallback((p: Product) => {
     const totalInCart = cart.filter(item => item.productId === p.id).reduce((acc, item) => acc + item.quantity, 0);
     if (totalInCart + 1 > p.stock) {
-        alert('Estoque insuficiente para este produto!');
+        notify('Estoque insuficiente para este produto no estoque central!', 'error');
         return;
     }
 
@@ -245,7 +245,7 @@ const SalesViewComponent = ({ setCurrentView }: { setCurrentView: (view: string)
 
     if (delta > 0) {
        const totalInCart = cart.filter(i => i.productId === item.productId).reduce((acc, it) => acc + it.quantity, 0);
-       if (totalInCart + 1 > prod.stock) return alert('Limite de estoque!');
+       if (totalInCart + 1 > prod.stock) return notify('Limite de estoque atingido para este produto!', 'warning');
     }
 
     const updatedItems = cart.map(i => i.cartId === cartId ? { ...i, quantity: newQty } : i);
@@ -316,7 +316,7 @@ const SalesViewComponent = ({ setCurrentView }: { setCurrentView: (view: string)
     if (cart.length === 0) return;
     const isVip = appliedPayments.some(p => p.method === 'Voucher VIP');
     if (totalPaid < totalFinalToPay - 0.01 && totalFinalToPay > 0 && !isVip) {
-      alert(`Pendente de recebimento: R$ ${remainingBalanceToSettle.toFixed(2)}`);
+      notify(`Pagamento pendente: R$ ${remainingBalanceToSettle.toFixed(2)} restantes.`, 'warning');
       return;
     }
     
@@ -420,7 +420,7 @@ const SalesViewComponent = ({ setCurrentView }: { setCurrentView: (view: string)
     const voucher = campaigns.find((c: Campaign) => c.type === 'voucher' && c.voucherCode === code && c.active);
     
     if (!voucher) {
-        alert('Código de voucher inválido ou não encontrado.');
+        notify('Voucher inválido ou não encontrado no sistema.', 'error');
         return;
     }
 
@@ -430,18 +430,18 @@ const SalesViewComponent = ({ setCurrentView }: { setCurrentView: (view: string)
     end.setHours(23, 59, 59, 999);
 
     if (now < start || now > end) {
-        alert('Este voucher está fora do período de validade.');
+        notify('Este voucher expirou ou ainda não iniciou sua validade.', 'error');
         return;
     }
 
     if ((voucher.voucherQuantity || 0) <= 0) {
-        alert('Este voucher atingiu o limite máximo de utilizações.');
+        notify('O limite de utilizações deste voucher foi atingido.', 'error');
         return;
     }
 
     const valueToApply = Math.min(remainingBalanceToSettle, voucher.voucherValue || 0);
     setCurrentPayAmount(valueToApply);
-    alert(`Voucher "${voucher.name}" validado! R$ ${formatCurrency(valueToApply)} pronto para lançar.`);
+    notify(`Voucher "${voucher.name}" validado com sucesso!`, 'success');
   };
 
   const addPayment = () => {
@@ -461,7 +461,7 @@ const SalesViewComponent = ({ setCurrentView }: { setCurrentView: (view: string)
 
     if (currentPayMethod === 'F12') {
        if (!f12Client.trim()) {
-          alert('Por favor, informe o nome do cliente para o registro F12.');
+          notify('O nome do cliente é obrigatório para registros F12.', 'warning');
           return;
        }
     }
@@ -515,7 +515,7 @@ const SalesViewComponent = ({ setCurrentView }: { setCurrentView: (view: string)
       setModalFluxo(authRequest);
       setAuthRequest(null);
     } else {
-      alert('Credenciais de Administrador inválidas!');
+      notify('Identificação de Administrador recusada!', 'error');
     }
   };
 
@@ -1130,7 +1130,7 @@ const SalesViewComponent = ({ setCurrentView }: { setCurrentView: (view: string)
         <div className="fixed inset-0 flex items-center justify-center p-6 z-[110] animate-in fade-in">
           <form onSubmit={(e) => {
              e.preventDefault();
-             if (fluxoVal <= 0) return alert('Valor inválido!');
+             if (fluxoVal <= 0) return notify('O valor da movimentação deve ser positivo!', 'warning');
              const amt = modalFluxo === 'retirada' ? -fluxoVal : fluxoVal;
              const log: CashLog = { id: Math.random().toString(36).substr(2, 9), type: modalFluxo, amount: fluxoVal, description: fluxoDesc || (modalFluxo === 'retirada' ? 'Sangria manual' : 'Entrada manual'), time: new Date().toISOString(), user: user.name };
              setCashSession((prev: CashSession) => ({ ...prev, currentBalance: prev.currentBalance + amt, logs: [log, ...prev.logs] }));

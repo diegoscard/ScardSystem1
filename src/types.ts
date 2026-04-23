@@ -191,3 +191,28 @@ export interface CommissionTier {
   min: number;
   rate: number;
 }
+
+export type NotificationType = 'success' | 'error' | 'warning' | 'info';
+
+export interface Notification {
+  id: string;
+  message: string;
+  type: NotificationType;
+  duration?: number;
+}
+
+export interface ConfirmationOptions {
+  title: string;
+  message: string;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  type?: 'danger' | 'warning' | 'info';
+}
+
+export interface PromptOptions {
+  title: string;
+  message: string;
+  placeholder?: string;
+  confirmLabel?: string;
+  cancelLabel?: string;
+}

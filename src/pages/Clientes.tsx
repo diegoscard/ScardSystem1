@@ -6,7 +6,7 @@ import { formatCurrency, maskCPFCNPJ, maskPhone, maskDate, parseCurrency } from 
 import Papa from 'papaparse';
 
 export default function Clientes() {
-  const { customers, setCustomers, sales, settings } = useStore();
+  const { customers, setCustomers, sales, settings, notify, confirm } = useStore();
   const [modal, setModal] = useState(false);
   const [showBirthdays, setShowBirthdays] = useState(false);
   const [form, setForm] = useState<Partial<Customer>>({ name: '', document: '', email: '', phone: '', address: '', birthDate: '', cep: '', addressNumber: '' });
@@ -32,11 +32,11 @@ export default function Clientes() {
             address: `${data.logradouro}, ${data.bairro}, ${data.localidade} - ${data.uf}`
           }));
         } else {
-          alert('CEP não encontrado.');
+          notify('CEP não encontrado.', 'warning');
         }
       } catch (error) {
         console.error('Erro ao buscar CEP:', error);
-        alert('Erro ao buscar CEP. Verifique sua conexão.');
+        notify('Erro ao buscar CEP. Verifique sua conexão.', 'error');
       } finally {
         setIsSearchingCEP(false);
       }
@@ -47,7 +47,7 @@ export default function Clientes() {
     const addressWithNumber = c.addressNumber ? `${c.address}, Nº ${c.addressNumber}` : c.address;
     const text = `👤 *CLIENTE:* ${c.name}\n📍 *ENDEREÇO:* ${addressWithNumber || 'Não informado'}`;
     navigator.clipboard.writeText(text);
-    alert('Dados de entrega copiados!');
+    notify('Dados de entrega copiados para área de transferência!', 'success');
   };
 
   const isBirthdayToday = (birthDate: string) => {
@@ -98,7 +98,7 @@ export default function Clientes() {
     const id = isNew ? Date.now() : form.id;
     
     if (isNew && customers.some(c => c.document === form.document && !!c.document)) {
-      alert('CPF/CNPJ já cadastrado!');
+      notify('Este CPF/CNPJ já está cadastrado para outro cliente!', 'error');
       return;
     }
     
@@ -233,7 +233,19 @@ export default function Clientes() {
                     <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                       <button onClick={(e) => { e.stopPropagation(); setForm(c); setModal(true); }} className="p-2 text-indigo-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all" title="Editar"><Edit size={14} /></button>
                       <button onClick={(e) => { e.stopPropagation(); handleCopyDelivery(c); }} className="p-2 text-emerald-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-all" title="Copiar Endereço de Entrega"><Layers size={14} /></button>
-                      <button onClick={(e) => { e.stopPropagation(); setCustomers(customers.filter(x => x.id !== c.id)); setSelectedCustomer(null); }} className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all" title="Excluir"><Trash2 size={14} /></button>
+                      <button onClick={async (e) => { 
+                        e.stopPropagation(); 
+                        if (await confirm({
+                          title: "Excluir Cliente",
+                          message: `Deseja realmente remover o cliente ${c.name}? Todo o histórico de fidelidade desse cliente será perdido.`,
+                          type: "danger",
+                          confirmLabel: "Sim, excluir"
+                        })) {
+                          setCustomers(customers.filter(x => x.id !== c.id)); 
+                          setSelectedCustomer(null); 
+                          notify('Cliente removido com sucesso!', 'success');
+                        }
+                      }} className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all" title="Excluir"><Trash2 size={14} /></button>
                     </div>
                   </td>
                 </tr>

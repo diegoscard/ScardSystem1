@@ -65,7 +65,8 @@ const App = () => {
     exchangeCredit, setExchangeCredit,
     fiados, setFiados,
     commTiers, setCommTiers,
-    pdvState, setPdvState
+    pdvState, setPdvState,
+    notify, confirm
   } = useStore();
 
   const [isUnlocked, setIsUnlocked] = useState(false);
@@ -201,7 +202,7 @@ const App = () => {
     const password = (form.elements.namedItem('regPassword') as HTMLInputElement).value;
 
     if (dbUsers.some(u => u.email === email)) {
-      alert('E-mail já cadastrado!');
+      notify('Este e-mail já está cadastrado no sistema!', 'error');
       return;
     }
 
@@ -215,7 +216,7 @@ const App = () => {
     };
 
     setDbUsers([...dbUsers, newUser]);
-    alert(`Usuário ${name} cadastrado com sucesso! Agora faça login.`);
+    notify(`Usuário ${name} cadastrado com sucesso!`, 'success');
     form.reset();
     setAuthMode('login');
   };
@@ -257,7 +258,7 @@ const App = () => {
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
     } catch(err) {
-      alert("Erro ao exportar backup.");
+      notify("Erro crítico ao gerar arquivo de exportação.", "error");
     }
   };
 
@@ -265,7 +266,12 @@ const App = () => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (!window.confirm("ATENÇÃO: Restaurar o backup irá sobrescrever TODOS os dados atuais (estoque, vendas, usuários e licenças). Deseja continuar?")) {
+    if (!(await confirm({
+      title: "Confirmar Restauração",
+      message: "ATENÇÃO: Restaurar o backup irá sobrescrever TODOS os dados atuais (estoque, vendas, usuários e licenças). Esta operação é irreversível. Deseja continuar?",
+      type: "danger",
+      confirmLabel: "Sim, restaurar tudo"
+    }))) {
       return;
     }
 
@@ -290,10 +296,10 @@ const App = () => {
           }
         }
         
-        alert("Backup restaurado com sucesso! O sistema será reiniciado.");
-        window.location.reload();
+        notify("Backup restaurado com sucesso! O sistema será reiniciado.", "success");
+        setTimeout(() => window.location.reload(), 2000);
       } catch (err) {
-        alert("Erro ao importar: O arquivo selecionado não é um backup válido ou está corrompido.");
+        notify("O arquivo selecionado não é um backup válido ou está corrompido.", "error");
       }
     };
     reader.readAsText(file);
@@ -309,7 +315,7 @@ const App = () => {
       const previousClosingBalance = lastSession.closingBalance;
       
       if (Math.abs(amount - previousClosingBalance) > 0.01) {
-        alert(`BLOQUEIO DE ABERTURA: O saldo inicial informado (R$ ${formatCurrency(amount)}) NÃO confere com o saldo de fechamento da sessão anterior (R$ ${formatCurrency(previousClosingBalance)}). Por favor, verifique o saldo físico e informe o valor correto.`);
+        notify(`BLOQUEIO: O saldo inicial (R$ ${formatCurrency(amount)}) não confere com o saldo de fechamento anterior (R$ ${formatCurrency(previousClosingBalance)}).`, 'error');
         return;
       }
     }
@@ -333,9 +339,14 @@ const App = () => {
     setOpeningBalanceInput(0); 
   };
 
-  const handleCloseCashAction = () => {
+  const handleCloseCashAction = async () => {
     if (!user || !cashSession) return;
-    if (window.confirm('Deseja realmente encerrar o caixa atual?')) {
+    if (await confirm({
+      title: "Encerrar Caixa",
+      message: "Deseja realmente encerrar a sessão de caixa atual? Todos os registros serão movidos para o histórico.",
+      type: "warning",
+      confirmLabel: "Sim, encerrar"
+    })) {
       const historyEntry: CashHistoryEntry = {
         id: Math.random().toString(36).substr(2, 9),
         openedBy: cashSession.openedBy,
@@ -348,7 +359,7 @@ const App = () => {
       };
       setCashHistory(prev => [historyEntry, ...prev]);
       setCashSession(null);
-      alert('Caixa encerrado e registrado com sucesso!');
+      notify('Caixa encerrado e registrado com sucesso!', 'success');
     }
   };
 

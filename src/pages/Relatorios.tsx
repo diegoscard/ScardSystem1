@@ -5,7 +5,7 @@ import { useStore } from '../contexts/StoreContext';
 import { formatCurrency, parseCurrency } from '../utils/helpers';
 
 const ReportsViewComponent = ({ setCurrentView }: { setCurrentView: (view: string) => void }) => {
-  const { user, sales, setSales, products, setProducts, setMovements, cashHistory, cashSession, setCashSession, settings, setExchangeCredit, dbUsers: vendedores, setCashHistory } = useStore();
+  const { user, sales, setSales, products, setProducts, setMovements, cashHistory, cashSession, setCashSession, settings, setExchangeCredit, dbUsers: vendedores, setCashHistory, notify, confirm } = useStore();
   const [tab, setTab] = useState<'sales' | 'cash' | 'fluxo'>('sales'); const [search, setSearch] = useState(''); const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
   const [filterPaymentMethod, setFilterPaymentMethod] = useState('');
   const [filterValue, setFilterValue] = useState('');
@@ -71,9 +71,18 @@ const ReportsViewComponent = ({ setCurrentView }: { setCurrentView: (view: strin
   }, [cashHistory, period, selectedDay, selectedMonth, selectedYear]);
 
   // Excluir venda silenciosamente (sem logs de estorno)
-  const handleDeleteSale = (sale: Sale) => {
-    if (!canDelete) return alert('Sem permissão para excluir vendas!'); 
-    if (!window.confirm('Deseja realmente excluir esta venda? O estoque será devolvido.')) return;
+  const handleDeleteSale = async (sale: Sale) => {
+    if (!canDelete) return notify('Operação restrita. Você não tem permissão para excluir vendas.', 'error'); 
+    
+    const ok = await confirm({
+        title: 'Excluir Venda',
+        message: 'Deseja realmente excluir esta venda? O estoque será devolvido e o saldo do caixa ajustado.',
+        type: 'danger',
+        confirmLabel: 'Confirmar Exclusão',
+        cancelLabel: 'Manter Venda'
+    });
+
+    if (!ok) return;
     
     // Devolução de Estoque (Apenas itens NÃO trocados, pois trocados já voltaram ao estoque)
     setProducts((prev: Product[]) => prev.map(p => { 
@@ -97,17 +106,33 @@ const ReportsViewComponent = ({ setCurrentView }: { setCurrentView: (view: strin
     }
 
     setSales((prev: Sale[]) => prev.filter(s => s.id !== sale.id)); 
-    alert('Venda removida com sucesso!');
+    notify('Venda removida com sucesso!', 'success');
   };
 
-  const handleItemExchange = (sale: Sale, item: SaleItem) => {
-    if (!canExchange) return alert('Sem permissão para realizar trocas!'); if (item.isExchanged) return alert('Este item já foi trocado!');
-    const itemSubtotal = (item.price * item.quantity) - item.discountValue - item.manualDiscountValue; const totalItemsSubtotal = sale.items.reduce((acc, it) => acc + (it.price * it.quantity - it.discountValue - it.manualDiscountValue), 0); const proportionalFactor = totalItemsSubtotal > 0 ? itemSubtotal / totalItemsSubtotal : 0; const netItemValue = sale.total * proportionalFactor;
-    if (!window.confirm(`Deseja realizar a troca do item ${item.name}?\nCrédito a ser gerado: R$ ${formatCurrency(netItemValue)}`)) return;
+  const handleItemExchange = async (sale: Sale, item: SaleItem) => {
+    if (!canExchange) return notify('Operação restrita. Você não tem permissão para realizar trocas.', 'error'); 
+    if (item.isExchanged) return notify('Este item já foi trocado anteriormente!', 'warning');
+    
+    const itemSubtotal = (item.price * item.quantity) - item.discountValue - item.manualDiscountValue; 
+    const totalItemsSubtotal = sale.items.reduce((acc, it) => acc + (it.price * it.quantity - it.discountValue - it.manualDiscountValue), 0); 
+    const proportionalFactor = totalItemsSubtotal > 0 ? itemSubtotal / totalItemsSubtotal : 0; 
+    const netItemValue = sale.total * proportionalFactor;
+    
+    const ok = await confirm({
+        title: 'Realizar Troca',
+        message: `Deseja realizar a troca do item ${item.name}? Um crédito de R$ ${formatCurrency(netItemValue)} será gerado no sistema.`,
+        type: 'warning',
+        confirmLabel: 'Confirmar Troca',
+        cancelLabel: 'Cancelar'
+    });
+
+    if (!ok) return;
+    
     setProducts((prev: Product[]) => prev.map(p => p.id === item.productId ? { ...p, stock: p.stock + item.quantity } : p ));
     setMovements((prev: any) => [{ id: Math.random(), productId: item.productId, productName: item.name, type: 'entrada', quantity: item.quantity, reason: `Troca Item Venda #${sale.id.toString().slice(-4)}`, date: new Date().toISOString(), user: user.name }, ...prev]);
     setSales((prev: Sale[]) => prev.map(s => { if (s.id === sale.id) { return { ...s, items: s.items.map(it => it.cartId === item.cartId ? { ...it, isExchanged: true } : it) }; } return s; }));
-    setExchangeCredit((prev: number) => prev + netItemValue); setSelectedSale(null); setCurrentView('sales'); alert(`Sucesso! R$ ${formatCurrency(netItemValue)} de crédito adicionado ao sistema.`);
+    setExchangeCredit((prev: number) => prev + netItemValue); setSelectedSale(null); setCurrentView('sales'); 
+    notify(`Troca realizada! R$ ${formatCurrency(netItemValue)} de crédito adicionado.`, 'success');
   };
 
   const handleUpdateSaleMaster = (e: React.FormEvent) => {
@@ -122,7 +147,7 @@ const ReportsViewComponent = ({ setCurrentView }: { setCurrentView: (view: strin
     const oldTotalSalePayments = editingSale.payments.reduce((acc, p) => acc + p.amount, 0);
     
     if (Math.abs(totalSalePayments - oldTotalSalePayments) > 0.01) {
-        alert('O total dos pagamentos deve ser igual ao valor original da venda (R$ ' + formatCurrency(oldTotalSalePayments) + ').');
+        notify('O total dos pagamentos deve ser exatamente R$ ' + formatCurrency(oldTotalSalePayments), 'error');
         return;
     }
 
@@ -162,12 +187,21 @@ const ReportsViewComponent = ({ setCurrentView }: { setCurrentView: (view: strin
 
     setSales(updatedSales);
     setEditingSale(null);
-    alert('Venda atualizada com sucesso pelo MASTER SYSTEM! ' + (cashDifference !== 0 && !cashSession ? '(Lembrando: O caixa atual está fechado, nenhuma movimentação registrada hoje)' : 'O saldo do caixa foi ajustado conforme a nova forma de pagamento.'));
+    notify('Venda atualizada e saldo de caixa ajustado com sucesso!', 'success');
   };
 
-  const handleDeleteCashLog = (log: CashLog) => {
+  const handleDeleteCashLog = async (log: CashLog) => {
     if (!isMasterUser) return;
-    if (!window.confirm(`Deseja realmente EXCLUIR este registro de ${log.type === 'entrada' ? 'Entrada' : 'Sangria'}?\nMotivo: ${log.description}\nValor: R$ ${formatCurrency(log.amount)}\n\nO saldo do caixa será ajustado automaticamente.`)) return;
+    
+    const ok = await confirm({
+        title: 'Excluir Lançamento',
+        message: `Deseja realmente EXCLUIR este registro de ${log.type === 'entrada' ? 'Entrada' : 'Sangria'}? O saldo do caixa será corrigido automaticamente.`,
+        type: 'danger',
+        confirmLabel: 'Excluir',
+        cancelLabel: 'Manter'
+    });
+
+    if (!ok) return;
 
     const valDiff = log.type === 'entrada' ? -log.amount : log.amount;
 
@@ -189,7 +223,7 @@ const ReportsViewComponent = ({ setCurrentView }: { setCurrentView: (view: strin
             return h;
         }));
     }
-    alert('Registro removido e caixa ajustado!');
+    notify('Lançamento removido e saldo de caixa corrigido!', 'success');
   };
 
   const handleSaveEditCashLog = (e: React.FormEvent) => {
@@ -228,7 +262,7 @@ const ReportsViewComponent = ({ setCurrentView }: { setCurrentView: (view: strin
     }
 
     setEditingCashLog(null);
-    alert('Registro atualizado e caixa ajustado!');
+    notify('Lançamento atualizado e saldo de caixa corrigido!', 'success');
   };
 
   return (

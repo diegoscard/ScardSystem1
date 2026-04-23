@@ -5,7 +5,7 @@ import { useStore } from '../contexts/StoreContext';
 import { formatCurrency, parseCurrency } from '../utils/helpers';
 
 const CampaignsViewComponent = () => {
-  const { campaigns, setCampaigns, products } = useStore();
+  const { campaigns, setCampaigns, products, notify, confirm } = useStore();
   const [modal, setModal] = useState(false);
   const [prodSearch, setProdSearch] = useState('');
   const [form, setForm] = useState<Partial<Campaign>>({
@@ -129,8 +129,20 @@ const CampaignsViewComponent = () => {
                   </td>
                   <td className="px-6 py-4 text-right">
                     <div className="flex justify-end gap-2">
-                      <button onClick={() => { setForm(c); setModal(true); }} className="p-2 text-slate-400 hover:text-indigo-600"><Edit size={14} /></button>
-                      <button onClick={() => setCampaigns(campaigns.filter((x: any) => x.id !== c.id))} className="p-2 text-slate-400 hover:text-red-600"><Trash2 size={14} /></button>
+                       <button onClick={() => { setForm(c); setModal(true); }} className="p-2 text-slate-400 hover:text-indigo-600"><Edit size={14} /></button>
+                       <button onClick={async () => {
+                           const ok = await confirm({
+                               title: 'Excluir Campanha',
+                               message: `Deseja realmente remover a campanha "${c.name}"?`,
+                               type: 'warning',
+                               confirmLabel: 'Excluir',
+                               cancelLabel: 'Manter'
+                           });
+                           if (ok) {
+                               setCampaigns(campaigns.filter((x: any) => x.id !== c.id));
+                               notify('Campanha removida.', 'info');
+                           }
+                       }} className="p-2 text-slate-400 hover:text-red-600"><Trash2 size={14} /></button>
                     </div>
                   </td>
                 </tr>
