@@ -98,6 +98,13 @@ export interface PaymentRecord {
   f12DueDate?: string;
 }
 
+export interface FiadoPaymentHistory {
+  date: string;
+  amount: number;
+  method: string;
+  user: string;
+}
+
 export interface FiadoRecord {
   id: string;
   saleId: number;
@@ -110,6 +117,7 @@ export interface FiadoRecord {
   vendedor: string;
   status: 'pending' | 'paid';
   items: SaleItem[];
+  paymentsHistory?: FiadoPaymentHistory[];
 }
 
 export interface CashLog {

@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Search, X } from 'lucide-react';
+import { Search, X, ClipboardList, Calendar, DollarSign, User as UserIcon, Clock, Receipt, CreditCard } from 'lucide-react';
 import { useStore } from '../contexts/StoreContext';
 import { FiadoRecord, CashLog, CashSession } from '../types';
 import { formatCurrency, parseCurrency } from '../utils/helpers';
@@ -8,6 +8,7 @@ export default function Pendentes() {
   const { user, fiados, setFiados, cashSession, setCashSession, cashHistory, notify } = useStore();
   const [search, setSearch] = useState('');
   const [receivingModal, setReceivingModal] = useState<FiadoRecord | null>(null);
+  const [selectedFiado, setSelectedFiado] = useState<FiadoRecord | null>(null);
   const [receiveAmount, setReceiveAmount] = useState(0);
   const [receiveMethod, setReceiveMethod] = useState('Dinheiro');
 
@@ -28,12 +29,20 @@ export default function Pendentes() {
     const newRemaining = Math.max(0, receivingModal.remainingAmount - receiveAmount);
     const isFullyPaid = newRemaining <= 0.01;
 
+    const newPaymentEntry = {
+      date: new Date().toISOString(),
+      amount: receiveAmount,
+      method: receiveMethod,
+      user: user.name
+    };
+
     const updatedFiados: FiadoRecord[] = fiados.map((f: FiadoRecord): FiadoRecord => {
        if (f.id === receivingModal.id) {
           return {
             ...f,
             remainingAmount: newRemaining,
-            status: isFullyPaid ? 'paid' : 'pending'
+            status: isFullyPaid ? 'paid' : 'pending',
+            paymentsHistory: [...(f.paymentsHistory || []), newPaymentEntry]
           };
        }
        return f;
@@ -101,11 +110,10 @@ export default function Pendentes() {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {pendingFiados.map((f: FiadoRecord) => (
-                  <tr key={f.id} className="hover:bg-slate-50 transition-all">
+                  <tr key={f.id} onClick={() => setSelectedFiado(f)} className="hover:bg-slate-50 transition-all cursor-pointer group">
                     <td className="px-6 py-4">
                        <div className="flex flex-col">
-                          <span className="font-bold text-slate-800 text-sm uppercase">{f.clientName}</span>
-                          <span className="text-[9px] font-black text-indigo-500">VENDA #{f.id.toString().slice(-4)}</span>
+                          <span className="font-bold text-slate-800 text-sm uppercase group-hover:text-indigo-600 transition-colors">{f.clientName}</span>
                        </div>
                     </td>
                     <td className="px-6 py-4">
@@ -122,7 +130,7 @@ export default function Pendentes() {
                     </td>
                     <td className="px-6 py-4 text-right">
                        <button 
-                        onClick={() => { setReceivingModal(f); setReceiveAmount(f.remainingAmount); }}
+                        onClick={(e) => { e.stopPropagation(); setReceivingModal(f); setReceiveAmount(f.remainingAmount); }}
                         className="bg-green-600 text-white px-4 py-2 rounded-lg font-black text-[10px] uppercase shadow-md hover:bg-green-700 active:scale-95 transition-all"
                        >
                           Dar Baixa
@@ -139,6 +147,133 @@ export default function Pendentes() {
             </table>
           </div>
        </div>
+
+       {/* Detalhes do Fiado / Relatorio */}
+       {selectedFiado && (
+          <div className="fixed inset-0 flex items-center justify-center p-6 z-[200] animate-in fade-in">
+             <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setSelectedFiado(null)}/>
+             <div className="bg-white rounded-[2.5rem] w-full max-w-2xl shadow-2xl relative overflow-hidden flex flex-col max-h-[85vh]">
+                <div className="p-8 border-b border-slate-100 flex justify-between items-start shrink-0">
+                   <div className="flex gap-4 items-center">
+                      <div className="p-4 bg-indigo-50 rounded-2xl text-indigo-600">
+                         <ClipboardList size={32} />
+                      </div>
+                      <div>
+                         <h3 className="text-2xl font-black text-slate-900 uppercase italic tracking-tighter">Relatório de Débito</h3>
+                         <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Detalhes e histórico de pagamentos</p>
+                      </div>
+                   </div>
+                   <button onClick={() => setSelectedFiado(null)} className="p-2 hover:bg-slate-50 rounded-xl text-slate-300 hover:text-slate-500 transition-all">
+                      <X size={24}/>
+                   </button>
+                </div>
+
+                <div className="flex-1 overflow-auto p-8 custom-scroll space-y-8">
+                   {/* Info Cabecalho */}
+                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                         <Calendar className="text-indigo-400 mb-2" size={16} />
+                         <span className="text-[8px] font-black text-slate-400 uppercase block">Data Compra</span>
+                         <span className="text-xs font-bold text-slate-700">{new Date(selectedFiado.createdAt).toLocaleDateString()}</span>
+                      </div>
+                      <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                         <Clock className="text-amber-400 mb-2" size={16} />
+                         <span className="text-[8px] font-black text-slate-400 uppercase block">Vencimento</span>
+                         <span className="text-xs font-bold text-slate-700">{new Date(selectedFiado.dueDate).toLocaleDateString()}</span>
+                      </div>
+                      <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                         <Receipt className="text-indigo-400 mb-2" size={16} />
+                         <span className="text-[8px] font-black text-slate-400 uppercase block">ID Venda</span>
+                         <span className="text-xs font-bold text-slate-700">#{selectedFiado.saleId || selectedFiado.id.toString().slice(-6)}</span>
+                      </div>
+                      <div className="bg-indigo-600 p-4 rounded-2xl shadow-lg shadow-indigo-100">
+                         <DollarSign className="text-white/60 mb-2" size={16} />
+                         <span className="text-[8px] font-black text-white/60 uppercase block">Total Original</span>
+                         <span className="text-xs font-black text-white italic transition-all">R$ {formatCurrency(selectedFiado.totalAmount)}</span>
+                      </div>
+                   </div>
+
+                   {/* Resumo do Cliente */}
+                   <div className="flex items-center gap-4 bg-slate-900 p-6 rounded-3xl">
+                      <div className="w-12 h-12 rounded-full bg-indigo-500 flex items-center justify-center text-white font-black text-xl italic uppercase">
+                         {selectedFiado.clientName.charAt(0)}
+                      </div>
+                      <div className="flex-1">
+                         <p className="text-[9px] font-black text-indigo-400 uppercase tracking-widest leading-none mb-1">Responsável pelo Débito</p>
+                         <h4 className="text-white font-black text-lg uppercase tracking-tight italic">{selectedFiado.clientName}</h4>
+                      </div>
+                      <div className="text-right">
+                         <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Saldo Devedor</p>
+                         <h4 className="text-red-500 font-black text-2xl font-mono uppercase italic">R$ {formatCurrency(selectedFiado.remainingAmount)}</h4>
+                      </div>
+                   </div>
+
+                   {/* Historico de Parcelas Pagas */}
+                   <div className="space-y-4">
+                      <div className="flex items-center justify-between">
+                         <h5 className="text-[11px] font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">
+                            <Clock size={14} className="text-indigo-500"/> Histórico de Pagamentos
+                         </h5>
+                         <span className="text-[9px] font-bold text-slate-400 italic">Total Pago: R$ {formatCurrency(selectedFiado.totalAmount - selectedFiado.remainingAmount)}</span>
+                      </div>
+                      
+                      <div className="space-y-2">
+                         {selectedFiado.paymentsHistory && selectedFiado.paymentsHistory.length > 0 ? (
+                            selectedFiado.paymentsHistory.map((pay, idx) => (
+                               <div key={idx} className="flex items-center justify-between p-4 bg-white border border-slate-100 rounded-2xl hover:border-indigo-100 transition-all hover:shadow-sm">
+                                  <div className="flex items-center gap-4">
+                                     <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                                        <CreditCard size={18}/>
+                                     </div>
+                                     <div>
+                                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">{new Date(pay.date).toLocaleString()}</p>
+                                        <p className="text-xs font-bold text-slate-700">Pagamento via <span className="font-black text-indigo-600 uppercase italic">{pay.method}</span></p>
+                                     </div>
+                                  </div>
+                                  <div className="text-right">
+                                     <p className="text-xs font-black text-emerald-600 font-mono italic">+ R$ {formatCurrency(pay.amount)}</p>
+                                     <p className="text-[8px] font-black text-slate-300 uppercase italic">Resp: {pay.user}</p>
+                                  </div>
+                               </div>
+                            ))
+                         ) : (
+                            <div className="p-10 border-2 border-dashed border-slate-100 rounded-[2rem] text-center">
+                               <p className="text-xs font-bold text-slate-300 italic uppercase tracking-widest">Nenhuma parcela paga até o momento.</p>
+                            </div>
+                         )}
+                      </div>
+                   </div>
+
+                   {/* Itens da Venda */}
+                   <div className="space-y-4">
+                      <h5 className="text-[11px] font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">
+                         <ClipboardList size={14} className="text-indigo-500"/> Itens Comprados
+                      </h5>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                         {selectedFiado.items.map((item, idx) => (
+                            <div key={idx} className="p-3 bg-slate-50 border border-slate-100 rounded-xl flex justify-between items-center">
+                               <div>
+                                  <p className="text-[10px] font-black text-slate-800 uppercase tracking-tight truncate max-w-[150px]">{item.name}</p>
+                                  <p className="text-[8px] font-bold text-slate-400">{item.quantity}x R$ {formatCurrency(item.price)}</p>
+                               </div>
+                               <span className="text-xs font-black text-slate-600 font-mono">R$ {formatCurrency(item.quantity * item.price)}</span>
+                            </div>
+                         ))}
+                      </div>
+                   </div>
+                </div>
+
+                <div className="p-8 bg-slate-50 border-t border-slate-100 shrink-0">
+                   <button 
+                    onClick={() => { setReceivingModal(selectedFiado); setReceiveAmount(selectedFiado.remainingAmount); setSelectedFiado(null); }}
+                    className="w-full bg-slate-900 text-white py-4 rounded-2xl font-black uppercase tracking-widest shadow-xl hover:bg-slate-800 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+                   >
+                      <DollarSign size={18} className="text-green-500"/> Lançar Pagamento Agora
+                   </button>
+                </div>
+             </div>
+          </div>
+       )}
 
        {receivingModal && (
           <div className="fixed inset-0 flex items-center justify-center p-6 z-[200] animate-in fade-in">
