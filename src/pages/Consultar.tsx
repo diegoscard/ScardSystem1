@@ -144,26 +144,26 @@ export default function Consultar() {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {filteredProducts.map((p) => (
-                  <tr key={p.id} className="hover:bg-slate-50 transition-all">
+                  <tr key={p.id} className={`transition-all ${p.stock === 0 ? 'bg-red-50/50 hover:bg-red-50' : 'hover:bg-slate-50'}`}>
                     <td className="px-6 py-4">
                       <div className="flex flex-col">
-                        <span className="font-bold text-slate-800 text-sm">{p.name}</span>
-                        <span className="text-[10px] font-black text-indigo-500 font-mono">{p.sku}</span>
+                        <span className={`font-bold text-sm ${p.stock === 0 ? 'text-red-700' : 'text-slate-800'}`}>{p.name}</span>
+                        <span className={`text-[10px] font-black font-mono ${p.stock === 0 ? 'text-red-400' : 'text-indigo-500'}`}>{p.sku}</span>
                       </div>
                     </td>
                     <td className="px-6 py-4">
-                       <span className="px-2.5 py-1 rounded-lg bg-slate-50 text-slate-500 text-[8px] font-black uppercase border">{p.category || 'Sem Categoria'}</span>
+                       <span className={`px-2.5 py-1 rounded-lg text-[8px] font-black uppercase border ${p.stock === 0 ? 'bg-red-100 text-red-700 border-red-200' : 'bg-slate-50 text-slate-500 border'}`}>{p.category || 'Sem Categoria'}</span>
                     </td>
                     <td className="px-6 py-4">
-                       <div className="flex flex-col text-[11px] font-bold text-slate-600">
+                       <div className={`flex flex-col text-[11px] font-bold ${p.stock === 0 ? 'text-red-600' : 'text-slate-600'}`}>
                           {p.size && <span>TAM: {p.size}</span>}
                           {p.color && <span>COR: {p.color}</span>}
                           {!p.size && !p.color && <span className="text-slate-300">-</span>}
                        </div>
                     </td>
-                    <td className="px-6 py-4 font-black text-slate-900 font-mono text-sm text-right">R$ {formatCurrency(p.price)}</td>
+                    <td className={`px-6 py-4 font-black font-mono text-sm text-right ${p.stock === 0 ? 'text-red-700' : 'text-slate-900'}`}>R$ {formatCurrency(p.price)}</td>
                     <td className="px-6 py-4 text-center">
-                       <span className={`px-4 py-1.5 rounded-xl text-[11px] font-black ${p.stock <= 5 ? 'text-red-500 bg-red-50' : 'text-green-600 bg-green-50'}`}>
+                       <span className={`px-4 py-1.5 rounded-xl text-[11px] font-black ${p.stock === 0 ? 'text-white bg-red-600 animate-pulse' : p.stock <= 5 ? 'text-red-500 bg-red-50' : 'text-green-600 bg-green-50'}`}>
                           {p.stock} un
                        </span>
                     </td>
