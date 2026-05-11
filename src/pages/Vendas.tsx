@@ -470,6 +470,7 @@ const SalesViewComponent = ({ setCurrentView }: { setCurrentView: (view: string)
     if (currentPayMethod === 'C. Débito') net = currentPayAmount * (1 - settings.cardFees.debit / 100);
     else if (currentPayMethod === 'C. Crédito') net = currentPayAmount * (1 - settings.cardFees.credit1x / 100);
     else if (currentPayMethod === 'C. Parcelado') net = currentPayAmount * (1 - settings.cardFees.creditInstallments / 100);
+    else if (currentPayMethod === 'C. SENFF') net = currentPayAmount; // No specific fee provided
     else if (currentPayMethod === 'F12') net = 0; 
     
     setAppliedPayments([...appliedPayments, { 
@@ -877,7 +878,7 @@ const SalesViewComponent = ({ setCurrentView }: { setCurrentView: (view: string)
                         setCurrentPayMethod(val);
                         if (val === 'Voucher VIP' || val === 'F12') setCurrentPayAmount(remainingBalanceToSettle);
                     }}>
-                      <option>Pix</option><option>Dinheiro</option><option>C. Débito</option><option>C. Crédito</option><option>C. Parcelado</option><option>Voucher</option>
+                      <option>Pix</option><option>Dinheiro</option><option>C. Débito</option><option>C. Crédito</option><option>C. Parcelado</option><option>C. SENFF</option><option>Voucher</option>
                       {(isAdmin || isMasterUser) && <option>Voucher VIP</option>}
                       {isAdmin && <option value="F12">F12</option>}
                     </select>

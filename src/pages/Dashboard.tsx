@@ -32,7 +32,7 @@ const DashboardViewComponent = () => {
   }, [sales, period, selectedDay, selectedMonth, selectedYear]);
 
   const stats = useMemo(() => {
-    let totals = { total: 0, cash: 0, pix: 0, card: 0, voucher: 0, voucherVip: 0, f12: 0, count: 0 };
+    let totals = { total: 0, cash: 0, pix: 0, card: 0, voucher: 0, voucherVip: 0, f12: 0, count: 0, senff: 0 };
     let productsCount: Record<number, { name: string, qty: number, size?: string, color?: string }> = {};
 
     filteredSales.forEach((s: Sale) => {
@@ -49,6 +49,7 @@ const DashboardViewComponent = () => {
            else if (p.method === 'Pix') totals.pix += p.amount; 
            else if (p.method === 'Voucher') totals.voucher += p.amount;
            else if (p.method === 'Voucher VIP') totals.voucherVip += p.amount;
+           else if (p.method === 'C. SENFF') totals.senff += p.amount;
            else totals.card += p.amount;
         }
       });
@@ -131,7 +132,7 @@ const DashboardViewComponent = () => {
   const totalStockSaleValue = products.reduce((acc: number, p: any) => acc + (p.price * p.stock), 0);
   const totalFiadoPending = fiados.filter((f: FiadoRecord) => f.status === 'pending').reduce((acc: number, f: FiadoRecord) => acc + f.remainingAmount, 0);
   
-  const totalReceivedForBadges = stats.totals.cash + stats.totals.pix + stats.totals.card + stats.totals.voucher + stats.totals.voucherVip;
+  const totalReceivedForBadges = stats.totals.cash + stats.totals.pix + stats.totals.card + stats.totals.voucher + stats.totals.voucherVip + stats.totals.senff;
 
   return (
     <div className="space-y-8 animate-in fade-in h-full flex flex-col pb-10">
@@ -165,10 +166,11 @@ const DashboardViewComponent = () => {
         <div className="lg:col-span-2 space-y-6">
            <div className="bg-white p-8 rounded-[2rem] border border-slate-200 shadow-sm space-y-8">
               <div className="flex justify-between items-center"><h3 className="text-lg font-black text-slate-800 uppercase italic flex items-center gap-2"><CreditCard size={20} className="text-indigo-600" /> Meios de Recebimento</h3><span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Período Selecionado</span></div>
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
                  <PaymentBadge label="Dinheiro" val={stats.totals.cash} color="green" total={totalReceivedForBadges} icon={<Banknote size={16}/>} />
                  <PaymentBadge label="Pix" val={stats.totals.pix} color="blue" total={totalReceivedForBadges} icon={<QrCode size={16}/>} />
                  <PaymentBadge label="Cartão" val={stats.totals.card} color="indigo" total={totalReceivedForBadges} icon={<CreditCard size={16}/>} />
+                 <PaymentBadge label="C. SENFF" val={stats.totals.senff} color="emerald" total={totalReceivedForBadges} icon={<CreditCard size={16}/>} />
                  <PaymentBadge label="Voucher" val={stats.totals.voucher} color="amber" total={totalReceivedForBadges} icon={<Gift size={16}/>} />
                  <PaymentBadge label="Pendentes (F12)" val={stats.totals.f12} color="red" total={totalReceivedForBadges + stats.totals.f12} icon={<HandCoins size={16}/>} />
               </div>
