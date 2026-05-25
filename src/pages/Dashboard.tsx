@@ -154,7 +154,7 @@ const DashboardViewComponent = () => {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         <CardStat icon={<TrendingUp size={24}/>} label="Faturamento Real" val={`R$ ${stats.totals.total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`} color="green" />
         <CardStat icon={<Star size={24}/>} label="Voucher VIP" val={`R$ ${formatCurrency(stats.totals.voucherVip)}`} color="amber" />
-        <CardStat icon={<HandCoins size={24}/>} label="Pendente (F12)" val={`R$ ${formatCurrency(totalFiadoPending)}`} color="red" />
+        <CardStat icon={<HandCoins size={24}/>} label="Crediário em Aberto" val={`R$ ${formatCurrency(totalFiadoPending)}`} color="red" />
         <CardStat icon={<Box size={24}/>} label="Total Estoque" val={`${totalStock} peças`} subVal={
           <div className="flex flex-col">
             <span className="text-red-500">Custo Total R$ {formatCurrency(totalStockCost)}</span>
@@ -172,7 +172,7 @@ const DashboardViewComponent = () => {
                  <PaymentBadge label="Cartão" val={stats.totals.card} color="indigo" total={totalReceivedForBadges} icon={<CreditCard size={16}/>} />
                  <PaymentBadge label="C. SENFF" val={stats.totals.senff} color="emerald" total={totalReceivedForBadges} icon={<CreditCard size={16}/>} />
                  <PaymentBadge label="Voucher" val={stats.totals.voucher} color="amber" total={totalReceivedForBadges} icon={<Gift size={16}/>} />
-                 <PaymentBadge label="Pendentes (F12)" val={stats.totals.f12} color="red" total={totalReceivedForBadges + stats.totals.f12} icon={<HandCoins size={16}/>} />
+                 <PaymentBadge label="Crediário" val={stats.totals.f12} color="red" total={totalReceivedForBadges + stats.totals.f12} icon={<HandCoins size={16}/>} />
               </div>
            </div>
            <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm">

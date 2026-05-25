@@ -11,6 +11,7 @@ export default function Consultar() {
   const [filterCategory, setFilterCategory] = useState('Todas');
   const [filterSize, setFilterSize] = useState('');
   const [filterColor, setFilterColor] = useState('');
+  const [filterStock, setFilterStock] = useState('');
   const [summaryModal, setSummaryModal] = useState(false);
   const [summaryText, setSummaryText] = useState('');
 
@@ -41,9 +42,15 @@ export default function Consultar() {
       const matchCategory = filterCategory === 'Todas' ? true : p.category === filterCategory;
       const matchSize = s ? p.size?.toLowerCase().includes(s) : true;
       const matchColor = c ? p.color?.toLowerCase().includes(c) : true;
-      return matchSearch && matchCategory && matchSize && matchColor;
+      
+      let matchStock = true;
+      if (filterStock !== '') {
+        matchStock = p.stock === Number(filterStock);
+      }
+
+      return matchSearch && matchCategory && matchSize && matchColor && matchStock;
     });
-  }, [products, search, isExact, filterCategory, filterSize, filterColor]);
+  }, [products, search, isExact, filterCategory, filterSize, filterColor, filterStock]);
 
   const generateWppSummary = () => {
     if (filteredProducts.length === 0) {
@@ -118,12 +125,21 @@ export default function Consultar() {
                 onChange={e => setFilterColor(e.target.value)}
               />
             </div>
+            <div className="flex items-center gap-2">
+              <input 
+                type="number" 
+                placeholder="QTD" 
+                className="w-16 px-3 py-2.5 bg-slate-50 border rounded-xl text-xs font-bold outline-none focus:border-indigo-500 text-center"
+                value={filterStock}
+                onChange={e => setFilterStock(e.target.value)}
+              />
+            </div>
             <select className="flex-1 min-w-[150px] bg-slate-50 px-4 py-2.5 rounded-xl border text-[10px] font-black uppercase outline-none focus:border-indigo-500" value={filterCategory} onChange={e => setFilterCategory(e.target.value)}>
                <option value="Todas">Todas Categorias</option>
                {sortedCategories.map((cat: string) => <option key={cat} value={cat}>{cat}</option>)}
             </select>
-            {(filterSize || filterColor) && (
-              <button onClick={() => { setFilterSize(''); setFilterColor(''); }} className="text-[9px] font-black text-red-400 uppercase hover:text-red-600 transition-colors flex items-center gap-1" title="Limpar Filtros">
+            {(filterSize || filterColor || filterStock !== '') && (
+              <button onClick={() => { setFilterSize(''); setFilterColor(''); setFilterStock(''); }} className="text-[9px] font-black text-red-400 uppercase hover:text-red-600 transition-colors flex items-center gap-1" title="Limpar Filtros">
                 <X size={16} />
               </button>
             )}

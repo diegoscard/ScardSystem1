@@ -67,7 +67,7 @@ export default function Sidebar({
         <NavBtn active={currentView === 'sales'} onClick={() => setCurrentView('sales')} icon={<ShoppingCart size={18}/>} label="Caixa PDV" />
         <NavBtn active={currentView === 'product_search'} onClick={() => setCurrentView('product_search')} icon={<Search size={18}/>} label="Consultar" />
         <NavBtn active={currentView === 'customers'} onClick={() => setCurrentView('customers')} icon={<Users size={18}/>} label="Clientes" />
-        {hasPermission('fiado') && <NavBtn active={currentView === 'fiado'} onClick={() => setCurrentView('fiado')} icon={<HandCoins size={18}/>} label="Pendentes (F12)" />}
+        {hasPermission('fiado') && <NavBtn active={currentView === 'fiado'} onClick={() => setCurrentView('fiado')} icon={<HandCoins size={18}/>} label="Crediário" />}
         <NavBtn active={currentView === 'reports'} onClick={() => setCurrentView('reports')} icon={<TrendingUp size={18}/>} label="Relatórios" />
         {hasPermission('stock') && <NavBtn active={currentView === 'stock'} onClick={() => setCurrentView('stock')} icon={<Package size={18}/>} label="Estoque" />}
         
