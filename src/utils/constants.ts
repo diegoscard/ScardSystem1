@@ -12,7 +12,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   storeCnpj: '00.000.000/0001-00',
   storePhone: '',
   storeName: 'SCARD SYS',
-  storeTagline: 'ENTERPRISE SOLUTION'
+  storeTagline: 'ENTERPRISE SOLUTION',
+  crediarioInterestRate: 30,
+  crediarioLateFee: 2,
+  crediarioLateInterestPerDay: 0.33
 };
 
 export const INITIAL_CATEGORIES = [

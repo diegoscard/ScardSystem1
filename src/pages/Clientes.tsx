@@ -1,15 +1,15 @@
 import React, { useState, useMemo } from 'react';
-import { Search, Plus, Trash2, Edit, X, RefreshCw, Layers, Check, Calendar, ArrowRightLeft, Upload } from 'lucide-react';
+import { Search, Plus, Trash2, Edit, X, RefreshCw, Layers, Check, Calendar, ArrowRightLeft, Upload, CreditCard } from 'lucide-react';
 import { useStore } from '../contexts/StoreContext';
-import { Customer, Sale } from '../types';
+import { Customer, Sale, FiadoRecord } from '../types';
 import { formatCurrency, maskCPFCNPJ, maskPhone, maskDate, parseCurrency } from '../utils/helpers';
 import Papa from 'papaparse';
 
 export default function Clientes() {
-  const { customers, setCustomers, sales, settings, notify, confirm } = useStore();
+  const { customers, setCustomers, sales, fiados, settings, notify, confirm, prompt } = useStore();
   const [modal, setModal] = useState(false);
   const [showBirthdays, setShowBirthdays] = useState(false);
-  const [form, setForm] = useState<Partial<Customer>>({ name: '', document: '', email: '', phone: '', address: '', birthDate: '', cep: '', addressNumber: '' });
+  const [form, setForm] = useState<Partial<Customer>>({ name: '', document: '', phone: '', address: '', birthDate: '', cep: '', addressNumber: '', creditLimit: 0 });
   const [search, setSearch] = useState('');
   const [period, setPeriod] = useState<'day' | 'month' | 'year'>('day');
   const [selectedDay, setSelectedDay] = useState(new Date().toISOString().slice(0, 10));
@@ -55,6 +55,12 @@ export default function Clientes() {
     const today = new Date();
     const [day, month] = birthDate.split('/');
     return parseInt(day) === today.getDate() && parseInt(month) === today.getMonth() + 1;
+  };
+
+  const getCustomerFiadoBalance = (customerName: string) => {
+    return (fiados || [])
+      .filter((f: FiadoRecord) => f.clientName.trim().toUpperCase() === customerName.trim().toUpperCase() && f.status === 'pending')
+      .reduce((acc, f) => acc + f.remainingAmount, 0);
   };
 
   const getCustomerSpendingInPeriod = (customerId: number) => {
@@ -110,7 +116,8 @@ export default function Clientes() {
       createdAt: form.createdAt || new Date().toISOString(), 
       totalSpent: form.totalSpent || 0,
       birthDate: validBirthDate,
-      name: form.name?.toUpperCase() || ''
+      name: form.name?.toUpperCase() || '',
+      creditLimit: form.creditLimit || 0
     } as Customer;
 
     if (isNew) {
@@ -120,17 +127,38 @@ export default function Clientes() {
     }
 
     setModal(false);
-    setForm({ name: '', document: '', email: '', phone: '', address: '', birthDate: '', cep: '', addressNumber: '' });
+    setForm({ name: '', document: '', phone: '', address: '', birthDate: '', cep: '', addressNumber: '', creditLimit: 0 });
+  };
+
+  const handleReleaseCredit = async (c: Customer) => {
+    const res = await prompt({
+      title: 'Liberar Crédito',
+      message: `Informe o limite de crédito total para ${c.name}:`,
+      placeholder: 'R$ 0,00',
+      confirmLabel: 'Liberar Crédito',
+      cancelLabel: 'Cancelar'
+    });
+
+    if (res !== null) {
+      const amount = parseCurrency(res);
+      if (isNaN(amount) || amount < 0) {
+        notify('Valor inválido.', 'error');
+        return;
+      }
+
+      setCustomers(prev => prev.map(x => x.id === c.id ? { ...x, creditLimit: amount } : x));
+      notify(`Crédito de R$ ${formatCurrency(amount)} liberado para ${c.name}!`, 'success');
+    }
   };
 
   return (
     <div className="space-y-6 h-full flex flex-col min-h-0 animate-in fade-in">
       <div className="flex justify-between items-center shrink-0">
         <div>
-          <h2 className="text-2xl font-black text-slate-900 tracking-tighter uppercase italic">CRM / Clientes</h2>
+          <h2 className="text-2xl font-black text-slate-900 tracking-tighter uppercase italic">Clientes</h2>
           <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Gestão de relacionamento e fidelidade</p>
         </div>
-        <button onClick={() => { setForm({ name: '', document: '', email: '', phone: '', address: '', birthDate: '', cep: '', addressNumber: '' }); setModal(true); }} className="bg-indigo-600 text-white px-6 py-3 rounded-xl font-black flex items-center gap-2 shadow-lg active:scale-95 text-[10px] uppercase">
+        <button onClick={() => { setForm({ name: '', document: '', phone: '', address: '', birthDate: '', cep: '', addressNumber: '' }); setModal(true); }} className="bg-indigo-600 text-white px-6 py-3 rounded-xl font-black flex items-center gap-2 shadow-lg active:scale-95 text-[10px] uppercase">
           <Plus size={16} /> Novo Cadastro
         </button>
       </div>
@@ -189,14 +217,20 @@ export default function Clientes() {
                 <th className="px-6 py-4">Cliente</th>
                 <th className="px-6 py-4">Contato</th>
                 <th className="px-6 py-4">Identificação</th>
+                <th className="px-6 py-4 text-right">Crédito Disponível</th>
                 <th className="px-6 py-4 text-right">{isFiltering ? 'Compras no Período' : 'Total Gasto'}</th>
                 <th className="px-6 py-4 text-right">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filtered.map(c => (
-                <tr key={c.id} className="hover:bg-slate-50 transition-all cursor-pointer group" onClick={() => setSelectedCustomer(c === selectedCustomer ? null : c)}>
-                  <td className="px-6 py-4">
+              {filtered.map(c => {
+                const used = getCustomerFiadoBalance(c.name);
+                const limit = c.creditLimit || 0;
+                const available = Math.max(0, limit - used);
+
+                return (
+                  <tr key={c.id} className="hover:bg-slate-50 transition-all cursor-pointer group" onClick={() => setSelectedCustomer(c === selectedCustomer ? null : c)}>
+                    <td className="px-6 py-4">
                      <div className="flex flex-col">
                         <span className="font-bold text-slate-800 text-sm uppercase">{c.name || 'Sem Nome'}</span>
                         <span className="text-[9px] font-black text-slate-400">Desde: {new Date(c.createdAt).toLocaleDateString()}</span>
@@ -210,7 +244,6 @@ export default function Clientes() {
                   <td className="px-6 py-4">
                      <div className="flex flex-col gap-0.5 text-xs">
                         <span className="font-mono text-slate-600">{maskPhone(c.phone) || 'Sem Telefone'}</span>
-                        {c.email && <span className="text-indigo-500 font-medium">{c.email}</span>}
                      </div>
                   </td>
                   <td className="px-6 py-4">
@@ -219,7 +252,15 @@ export default function Clientes() {
                         {c.birthDate && <span className="text-[9px] font-black text-slate-400 uppercase">Nasc: {c.birthDate}</span>}
                      </div>
                   </td>
-                  <td className="px-6 py-4 text-right space-y-1">
+                   <td className="px-6 py-4 text-right">
+                      <div className="flex flex-col items-end">
+                         <span className={`font-black font-mono text-xs ${available > 0 ? 'text-emerald-600' : 'text-slate-400'}`}>
+                            R$ {formatCurrency(available)}
+                         </span>
+                         <span className="text-[8px] font-black text-slate-400 uppercase tracking-tighter">De R$ {formatCurrency(limit)}</span>
+                      </div>
+                   </td>
+                   <td className="px-6 py-4 text-right space-y-1">
                      <span className="font-mono font-black text-slate-800 block">
                          R$ {formatCurrency(isFiltering ? getCustomerSpendingInPeriod(c.id) || 0 : c.totalSpent || 0)}
                      </span>
@@ -229,9 +270,10 @@ export default function Clientes() {
                         </span>
                      )}
                   </td>
-                  <td className="px-6 py-4 text-right">
-                    <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button onClick={(e) => { e.stopPropagation(); setForm(c); setModal(true); }} className="p-2 text-indigo-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all" title="Editar"><Edit size={14} /></button>
+                    <td className="px-6 py-4 text-right">
+                      <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button onClick={(e) => { e.stopPropagation(); handleReleaseCredit(c); }} className="p-2 text-emerald-500 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg transition-all" title="Liberar Crédito"><CreditCard size={14} /></button>
+                        <button onClick={(e) => { e.stopPropagation(); setForm(c); setModal(true); }} className="p-2 text-indigo-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all" title="Editar"><Edit size={14} /></button>
                       <button onClick={(e) => { e.stopPropagation(); handleCopyDelivery(c); }} className="p-2 text-emerald-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-all" title="Copiar Endereço de Entrega"><Layers size={14} /></button>
                       <button onClick={async (e) => { 
                         e.stopPropagation(); 
@@ -249,7 +291,8 @@ export default function Clientes() {
                     </div>
                   </td>
                 </tr>
-              ))}
+              );
+            })}
               {filtered.length === 0 && (
                 <tr>
                   <td colSpan={5} className="py-20 text-center text-slate-300 font-bold italic uppercase tracking-widest">Nenhum cliente encomtrado...</td>
@@ -280,12 +323,12 @@ export default function Clientes() {
                   <input className="w-full border-2 rounded-xl px-4 py-2.5 text-sm font-mono font-bold focus:border-indigo-500 outline-none" value={maskCPFCNPJ(form.document || '')} onChange={e => setForm({ ...form, document: e.target.value.replace(/\D/g, '') })} />
                </div>
                <div className="space-y-1">
+                  <label className="text-[9px] font-black text-slate-400 uppercase block ml-1">Limite de Crédito</label>
+                  <input className="w-full border-2 rounded-xl px-4 py-2.5 text-sm font-mono font-bold focus:border-indigo-500 outline-none text-emerald-600" value={formatCurrency(form.creditLimit || 0)} onChange={e => setForm({ ...form, creditLimit: parseCurrency(e.target.value) })} onFocus={e => e.target.select()} />
+               </div>
+               <div className="space-y-1">
                   <label className="text-[9px] font-black text-slate-400 uppercase block ml-1">Telefone (WhatsApp)</label>
                   <input className="w-full border-2 rounded-xl px-4 py-2.5 text-sm font-mono font-bold focus:border-indigo-500 outline-none" value={maskPhone(form.phone || '')} onChange={e => setForm({ ...form, phone: e.target.value })} />
-               </div>
-               <div className="space-y-1 col-span-2 md:col-span-1">
-                  <label className="text-[9px] font-black text-slate-400 uppercase block ml-1">E-mail</label>
-                  <input type="email" className="w-full border-2 rounded-xl px-4 py-2.5 text-sm font-bold focus:border-indigo-500 outline-none" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} />
                </div>
                <div className="space-y-1">
                   <label className="text-[9px] font-black text-slate-400 uppercase block ml-1">Data de Nascimento</label>

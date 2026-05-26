@@ -2,15 +2,34 @@ import React, { useState, useMemo } from 'react';
 import { 
   Search, X, ClipboardList, Calendar, DollarSign, User as UserIcon, 
   Clock, Receipt, CreditCard, AlertTriangle, CheckCircle2, TrendingUp,
-  Share2, Send, Copy, Sparkles
+  Share2, Send, Copy, Sparkles, Trash2
 } from 'lucide-react';
 import { useStore } from '../contexts/StoreContext';
 import { FiadoRecord, CashLog, CashSession } from '../types';
 import { formatCurrency, parseCurrency } from '../utils/helpers';
 
 export default function Pendentes() {
-  const { user, fiados, setFiados, cashSession, setCashSession, notify } = useStore();
+  const { user, fiados, setFiados, cashSession, setCashSession, notify, settings, confirm } = useStore();
   const [search, setSearch] = useState('');
+
+  const calculateLateCharges = (f: FiadoRecord) => {
+    if (f.status !== 'pending' || !f.dueDate) return 0;
+    const now = new Date();
+    const dueDate = new Date(f.dueDate);
+    if (now <= dueDate) return 0;
+
+    const diffTime = Math.abs(now.getTime() - dueDate.getTime());
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+    const lateFee = (settings.crediarioLateFee || 0);
+    const dailyInterest = (f.remainingAmount * (settings.crediarioLateInterestPerDay || 0) / 100) * diffDays;
+
+    return lateFee + dailyInterest;
+  };
+
+  const getAdjustedBalance = (f: FiadoRecord) => {
+    return f.remainingAmount + calculateLateCharges(f);
+  };
   const [receivingModal, setReceivingModal] = useState<FiadoRecord | null>(null);
   const [selectedFiado, setSelectedFiado] = useState<FiadoRecord | null>(null);
   const [receiveAmount, setReceiveAmount] = useState(0);
@@ -20,12 +39,12 @@ export default function Pendentes() {
   // Multi-dimensional statistics calculation for the Crediário panel
   const statsCrediario = useMemo(() => {
     const active = fiados.filter((f: FiadoRecord) => f.status === 'pending');
-    const totalPending = active.reduce((acc, f) => acc + f.remainingAmount, 0);
+    const totalPending = active.reduce((acc, f) => acc + getAdjustedBalance(f), 0);
     const uniqueClients = new Set(active.map(f => f.clientName.trim().toUpperCase())).size;
     
     const now = new Date();
     const overdue = active.filter(f => f.dueDate && new Date(f.dueDate) < now);
-    const overdueTotal = overdue.reduce((acc, f) => acc + f.remainingAmount, 0);
+    const overdueTotal = overdue.reduce((acc, f) => acc + getAdjustedBalance(f), 0);
 
     let totalPaymentsReceived = 0;
     fiados.forEach((f: FiadoRecord) => {
@@ -69,12 +88,14 @@ export default function Pendentes() {
     e.preventDefault();
     if (!receivingModal || !user) return;
 
-    if (receiveAmount <= 0 || receiveAmount > receivingModal.remainingAmount + 0.01) {
+    const maxAllowed = getAdjustedBalance(receivingModal);
+    if (receiveAmount <= 0 || receiveAmount > maxAllowed + 0.01) {
       notify('Valor inválido para recebimento.', 'error');
       return;
     }
 
-    const newRemaining = Math.max(0, receivingModal.remainingAmount - receiveAmount);
+    const lateCharges = calculateLateCharges(receivingModal);
+    const newRemaining = Math.max(0, (receivingModal.remainingAmount + lateCharges) - receiveAmount);
     const isFullyPaid = newRemaining <= 0.01;
 
     const newPaymentEntry = {
@@ -88,9 +109,11 @@ export default function Pendentes() {
        if (f.id === receivingModal.id) {
           return {
             ...f,
+            totalAmount: f.totalAmount + lateCharges,
             remainingAmount: newRemaining,
             status: isFullyPaid ? 'paid' : 'pending',
-            paymentsHistory: [...(f.paymentsHistory || []), newPaymentEntry]
+            paymentsHistory: [...(f.paymentsHistory || []), newPaymentEntry],
+            dueDate: isFullyPaid ? f.dueDate : new Date().toISOString() // Reset due date if partially paid? Or keep it?
           };
        }
        return f;
@@ -171,6 +194,20 @@ export default function Pendentes() {
     const url = `https://api.whatsapp.com/send?text=${encodeURIComponent(message)}`;
     window.open(url, '_blank', 'noopener,noreferrer');
     notify('Abrindo WhatsApp para enviar notificação de cobrança...', 'success');
+  };
+
+  const handleDelete = async (id: string) => {
+    const ok = await confirm({
+      title: 'Excluir Lançamento',
+      message: 'Tem certeza que deseja excluir este registro de crediário? Esta ação é irreversível.',
+      confirmLabel: 'Excluir',
+      cancelLabel: 'Cancelar'
+    });
+
+    if (ok) {
+      setFiados((prev: FiadoRecord[]) => prev.filter(f => f.id !== id));
+      notify('Registro de crediário excluído com sucesso!', 'success');
+    }
   };
 
   return (
@@ -317,14 +354,14 @@ export default function Pendentes() {
                        <td className="px-6 py-4 text-right font-mono font-bold text-slate-400 text-sm">R$ {formatCurrency(f.totalAmount)}</td>
                        <td className="px-6 py-4 text-right">
                           <span className={`font-black font-mono text-sm ${f.status === 'paid' ? 'text-emerald-600' : 'text-red-600'}`}>
-                             R$ {formatCurrency(f.remainingAmount)}
+                             R$ {formatCurrency(getAdjustedBalance(f))}
                           </span>
                        </td>
                        <td className="px-6 py-4 text-center">
                           <div className="flex items-center justify-center gap-2" onClick={e => e.stopPropagation()}>
                              {f.status === 'pending' && (
                                <button 
-                                 onClick={() => { setReceivingModal(f); setReceiveAmount(f.remainingAmount); }}
+                                 onClick={() => { setReceivingModal(f); setReceiveAmount(getAdjustedBalance(f)); }}
                                  className="bg-green-600 text-white px-3.5 py-1.5 rounded-xl font-black text-[10px] uppercase shadow-md hover:bg-green-700 active:scale-95 transition-all flex items-center gap-1"
                                >
                                   <DollarSign size={13}/> Quitar
@@ -346,6 +383,13 @@ export default function Pendentes() {
                                   <Send size={14}/>
                                </button>
                              )}
+                             <button
+                               onClick={() => handleDelete(f.id)}
+                               className="p-2 bg-red-50 text-red-400 hover:bg-red-600 hover:text-white rounded-xl transition-all"
+                               title="Excluir Registro"
+                             >
+                                <Trash2 size={14}/>
+                             </button>
                           </div>
                        </td>
                      </tr>
@@ -425,7 +469,7 @@ export default function Pendentes() {
                       <div className="text-right md:ml-auto relative z-10 shrink-0">
                          <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Saldo Devedor Atual</p>
                          <h4 className={`font-black text-2xl font-mono uppercase italic ${selectedFiado.status === 'paid' ? 'text-emerald-400' : 'text-red-500'}`}>
-                            R$ {formatCurrency(selectedFiado.remainingAmount)}
+                            R$ {formatCurrency(getAdjustedBalance(selectedFiado))}
                          </h4>
                       </div>
                    </div>
@@ -529,7 +573,7 @@ export default function Pendentes() {
                    <div className="mt-2 flex justify-center gap-4">
                       <div>
                          <span className="text-[8px] font-black text-slate-400 uppercase block">Saldo Devedor total</span>
-                         <span className="font-mono font-black text-red-600">R$ {formatCurrency(receivingModal.remainingAmount)}</span>
+                         <span className="font-mono font-black text-red-600">R$ {formatCurrency(getAdjustedBalance(receivingModal))}</span>
                       </div>
                    </div>
                 </div>

@@ -38,7 +38,8 @@ const DashboardViewComponent = () => {
     filteredSales.forEach((s: Sale) => {
       totals.count += 1;
       s.payments.forEach(p => {
-        if (p.method === 'F12') {
+        const isCrediario = p.method === 'Crediário' || p.method === 'F12';
+        if (isCrediario) {
            totals.f12 += p.amount;
         } else {
            if (p.method !== 'Voucher VIP') {
@@ -77,12 +78,14 @@ const DashboardViewComponent = () => {
           matchPeriod = logDate.getFullYear() === Number(selectedYear);
        }
 
-       if (matchPeriod && log.description.startsWith('Rec. Pendente:')) {
-          totals.total += log.amount;
-          if (log.description.includes('(Dinheiro)')) totals.cash += log.amount;
-          else if (log.description.includes('(Pix)')) totals.pix += log.amount;
-          else totals.card += log.amount;
-       }
+        const isReceipt = log.description.startsWith('Rec. Pendente:') || log.description.startsWith('Rec. Crediário:');
+        if (matchPeriod && isReceipt) {
+           totals.total += log.amount;
+           if (log.description.includes('(Dinheiro)')) totals.cash += log.amount;
+           else if (log.description.includes('(Pix)')) totals.pix += log.amount;
+           else if (log.description.includes('(Crediário)') || log.description.includes('(F12)')) totals.f12 += log.amount;
+           else totals.card += log.amount;
+        }
     });
 
     const productsRank = Object.values(productsCount).sort((a, b) => b.qty - a.qty).slice(0, 5);

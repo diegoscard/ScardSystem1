@@ -13,6 +13,7 @@ export interface Customer {
   lastPurchase?: string;
   cep?: string;
   addressNumber?: string;
+  creditLimit?: number;
 }
 
 export interface User {
@@ -38,6 +39,9 @@ export interface AppSettings {
   storePhone?: string;
   storeName?: string; 
   storeTagline?: string; 
+  crediarioInterestRate: number;
+  crediarioLateFee: number;
+  crediarioLateInterestPerDay: number;
 }
 
 export interface Product {

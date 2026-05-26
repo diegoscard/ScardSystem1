@@ -49,6 +49,12 @@ const SalesViewComponent = ({ setCurrentView }: { setCurrentView: (view: string)
   const [customerSearch, setCustomerSearch] = useState('');
   const [showCustomerSearch, setShowCustomerSearch] = useState(false);
 
+  const getCustomerFiadoBalance = (customerName: string) => {
+    return (fiados || [])
+      .filter((f: FiadoRecord) => f.clientName.trim().toUpperCase() === customerName.trim().toUpperCase() && f.status === 'pending')
+      .reduce((acc, f) => acc + f.remainingAmount, 0);
+  };
+
   const filteredCustomers = useMemo(() => {
     if (!customerSearch) return [];
     const t = customerSearch.toLowerCase();
@@ -307,10 +313,16 @@ const SalesViewComponent = ({ setCurrentView }: { setCurrentView: (view: string)
   }, [totalFinalToPay, totalPaid, remainingBalanceToSettle]);
 
   const calculatedInstallment = useMemo(() => {
-    if (currentPayMethod !== 'C. Parcelado' || installments < 1) return currentPayAmount;
-    const totalWithInterest = currentPayAmount * (1 + (settings.cardFees.creditInstallments / 100));
-    return totalWithInterest / installments;
-  }, [currentPayAmount, currentPayMethod, installments, settings.cardFees.creditInstallments]);
+    if (currentPayMethod === 'C. Parcelado' && installments >= 1) {
+      const totalWithInterest = currentPayAmount * (1 + (settings.cardFees.creditInstallments / 100));
+      return totalWithInterest / installments;
+    }
+    if (currentPayMethod === 'Crediário' && installments >= 1) {
+      const totalWithInterest = currentPayAmount * (1 + (settings.crediarioInterestRate / 100));
+      return totalWithInterest / installments;
+    }
+    return currentPayAmount;
+  }, [currentPayAmount, currentPayMethod, installments, settings.cardFees.creditInstallments, settings.crediarioInterestRate]);
 
   const handleFinish = () => {
     if (cart.length === 0) return;
@@ -347,21 +359,24 @@ const SalesViewComponent = ({ setCurrentView }: { setCurrentView: (view: string)
       ));
     }
 
-    const f12Payments = appliedPayments.filter(p => p.method === 'F12');
+    const f12Payments = appliedPayments.filter(p => p.method === 'Crediário');
     if (f12Payments.length > 0) {
-       const newFiados: FiadoRecord[] = f12Payments.map(p => ({
-          id: Math.random().toString(36).substr(2, 9),
-          saleId: sale.id,
-          clientName: p.f12ClientName || 'Desconhecido',
-          description: p.f12Description || 'Sem observação',
-          totalAmount: p.amount,
-          remainingAmount: p.amount,
-          createdAt: new Date().toISOString(),
-          dueDate: p.f12DueDate || new Date().toISOString(),
-          vendedor: assignedVendedor,
-          status: 'pending',
-          items: [...cart]
-       }));
+       const newFiados: FiadoRecord[] = f12Payments.map(p => {
+          const totalWithInterest = (p.installmentValue && p.installments) ? (p.installmentValue * p.installments) : p.amount;
+          return {
+             id: Math.random().toString(36).substr(2, 9),
+             saleId: sale.id,
+             clientName: p.f12ClientName || 'Desconhecido',
+             description: p.f12Description || 'Sem observação',
+             totalAmount: parseFloat(totalWithInterest.toFixed(2)),
+             remainingAmount: parseFloat(totalWithInterest.toFixed(2)),
+             createdAt: new Date().toISOString(),
+             dueDate: p.f12DueDate || new Date().toISOString(),
+             vendedor: assignedVendedor,
+             status: 'pending',
+             items: [...cart]
+          };
+       });
        setFiados((prev: FiadoRecord[]) => [...newFiados, ...prev]);
     }
 
@@ -459,9 +474,18 @@ const SalesViewComponent = ({ setCurrentView }: { setCurrentView: (view: string)
         return;
     }
 
-    if (currentPayMethod === 'F12') {
-       if (!f12Client.trim()) {
-          notify('O nome do cliente é obrigatório para registros F12.', 'warning');
+    if (currentPayMethod === 'Crediário') {
+       if (!selectedCustomer) {
+          notify('Selecione um cliente para realizar uma venda no Crediário.', 'warning');
+          setShowCustomerSearch(true);
+          return;
+       }
+       const used = getCustomerFiadoBalance(selectedCustomer.name);
+       const limit = selectedCustomer.creditLimit || 0;
+       const available = Math.max(0, limit - used);
+
+       if (currentPayAmount > available) {
+          notify(`Limite insuficiente! Disponível: R$ ${formatCurrency(available)}`, 'error');
           return;
        }
     }
@@ -471,18 +495,18 @@ const SalesViewComponent = ({ setCurrentView }: { setCurrentView: (view: string)
     else if (currentPayMethod === 'C. Crédito') net = currentPayAmount * (1 - settings.cardFees.credit1x / 100);
     else if (currentPayMethod === 'C. Parcelado') net = currentPayAmount * (1 - settings.cardFees.creditInstallments / 100);
     else if (currentPayMethod === 'C. SENFF') net = currentPayAmount; // No specific fee provided
-    else if (currentPayMethod === 'F12') net = 0; 
+    else if (currentPayMethod === 'Crediário') net = 0; 
     
     setAppliedPayments([...appliedPayments, { 
       method: currentPayMethod, 
       amount: currentPayAmount,
-      installments: currentPayMethod === 'C. Parcelado' ? installments : undefined,
-      installmentValue: currentPayMethod === 'C. Parcelado' ? calculatedInstallment : undefined,
+      installments: (currentPayMethod === 'C. Parcelado' || currentPayMethod === 'Crediário') ? installments : undefined,
+      installmentValue: (currentPayMethod === 'C. Parcelado' || currentPayMethod === 'Crediário') ? calculatedInstallment : undefined,
       netAmount: parseFloat(net.toFixed(2)),
       voucherCode: currentPayMethod === 'Voucher' ? voucherCodeInput.trim().toUpperCase() : undefined,
-      f12ClientName: currentPayMethod === 'F12' ? f12Client.trim().toUpperCase() : undefined,
-      f12Description: currentPayMethod === 'F12' ? f12Desc.trim() : undefined,
-      f12DueDate: currentPayMethod === 'F12' ? f12Date : undefined
+      f12ClientName: currentPayMethod === 'Crediário' ? selectedCustomer?.name.toUpperCase() : undefined,
+      f12Description: currentPayMethod === 'Crediário' ? f12Desc.trim() : undefined,
+      f12DueDate: currentPayMethod === 'Crediário' ? f12Date : undefined
     }]);
 
     setF12Client('');
@@ -876,11 +900,22 @@ const SalesViewComponent = ({ setCurrentView }: { setCurrentView: (view: string)
                     <select className="w-full border rounded-lg px-2.5 py-2 bg-slate-50 text-slate-800 font-black text-[10px] uppercase cursor-pointer focus:border-indigo-500 outline-none transition-all" value={currentPayMethod} onChange={e => {
                         const val = e.target.value;
                         setCurrentPayMethod(val);
-                        if (val === 'Voucher VIP' || val === 'F12') setCurrentPayAmount(remainingBalanceToSettle);
+                        if (val === 'Voucher VIP' || val === 'Crediário') {
+                            setCurrentPayAmount(remainingBalanceToSettle);
+                            if (val === 'Crediário') {
+                                if (!selectedCustomer) setShowCustomerSearch(true);
+                                const d = new Date();
+                                d.setDate(d.getDate() + 30);
+                                setF12Date(d.toISOString().split('T')[0]);
+                                setInstallments(3);
+                            }
+                        } else {
+                            setInstallments(1);
+                        }
                     }}>
                       <option>Pix</option><option>Dinheiro</option><option>C. Débito</option><option>C. Crédito</option><option>C. Parcelado</option><option>C. SENFF</option><option>Voucher</option>
                       {(isAdmin || isMasterUser) && <option>Voucher VIP</option>}
-                      {isAdmin && <option value="F12">F12</option>}
+                      {isAdmin && <option value="Crediário">Crediário</option>}
                     </select>
 
                     {currentPayMethod === 'Voucher' && (
@@ -899,39 +934,61 @@ const SalesViewComponent = ({ setCurrentView }: { setCurrentView: (view: string)
                         </div>
                     )}
 
-                    {currentPayMethod === 'F12' && (
+                    {currentPayMethod === 'Crediário' && (
                         <div className="animate-in fade-in slide-in-from-top-1 bg-indigo-50 p-3 rounded-lg border border-indigo-200 space-y-2">
-                           <div>
-                              <label className="text-[8px] font-black uppercase text-indigo-600">Nome do Cliente</label>
-                              <input 
-                                type="text" 
-                                placeholder="CLIENTE AMIGO"
-                                className="w-full border rounded-md px-2 py-1.5 text-[10px] font-black uppercase bg-white outline-none focus:border-indigo-400 mt-0.5"
-                                value={f12Client}
-                                onChange={e => setF12Client(e.target.value.toUpperCase())}
-                              />
-                           </div>
-                           <div className="grid grid-cols-2 gap-2">
-                              <div>
-                                 <label className="text-[8px] font-black uppercase text-indigo-600">Vencimento</label>
-                                 <input 
-                                    type="date" 
-                                    className="w-full border rounded-md px-2 py-1 text-[10px] font-black bg-white outline-none focus:border-indigo-400 mt-0.5"
-                                    value={f12Date}
-                                    onChange={e => setF12Date(e.target.value)}
-                                 />
+                           {!selectedCustomer ? (
+                              <div className="text-center py-2">
+                                 <p className="text-[9px] font-black text-indigo-400 uppercase">Selecione um cliente acima primeiro</p>
                               </div>
-                              <div>
-                                 <label className="text-[8px] font-black uppercase text-indigo-600">Condições/Desc.</label>
-                                 <input 
-                                    type="text" 
-                                    placeholder="Ex: 2x no mês"
-                                    className="w-full border rounded-md px-2 py-1 text-[10px] font-black bg-white outline-none focus:border-indigo-400 mt-0.5"
-                                    value={f12Desc}
-                                    onChange={e => setF12Desc(e.target.value)}
-                                 />
-                              </div>
-                           </div>
+                           ) : (() => {
+                              const used = getCustomerFiadoBalance(selectedCustomer.name);
+                              const limit = selectedCustomer.creditLimit || 0;
+                              const available = Math.max(0, limit - used);
+                              return (
+                                <div className="space-y-2">
+                                   <div className="flex justify-between items-end border-b border-indigo-100 pb-2">
+                                      <div>
+                                         <p className="text-[7px] font-black text-indigo-400 uppercase">CLIENTE SELECIONADO</p>
+                                         <p className="text-[10px] font-black text-indigo-700 uppercase">{selectedCustomer.name}</p>
+                                      </div>
+                                      <div className="text-right">
+                                         <p className="text-[7px] font-black text-emerald-500 uppercase tracking-tighter">LIMITE DISPONÍVEL</p>
+                                         <p className="text-xs font-black font-mono text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">R$ {formatCurrency(available)}</p>
+                                      </div>
+                                   </div>
+                                   <div className="mb-2">
+                                      <label className="text-[8px] font-black uppercase text-indigo-600">Vencimento</label>
+                                      <input 
+                                         type="date" 
+                                         className="w-full border rounded-md px-2 py-1 text-[10px] font-black bg-white outline-none focus:border-indigo-400 mt-0.5"
+                                         value={f12Date}
+                                         onChange={e => setF12Date(e.target.value)}
+                                      />
+                                   </div>
+                                   <div className="bg-white p-2 rounded-lg border border-indigo-100 flex flex-col gap-2">
+                                      <div className="flex justify-between items-center px-1">
+                                         <span className="text-[8px] font-black text-indigo-400 uppercase">PARCELAS (3-5X)</span>
+                                         <div className="flex items-center gap-2">
+                                            <button type="button" onClick={() => setInstallments(Math.max(3, installments - 1))} className="p-1 bg-indigo-50 text-indigo-600 rounded">
+                                               <ChevronLeft size={10} />
+                                            </button>
+                                            <span className="font-bold text-[11px] min-w-[12px] text-center">{installments}</span>
+                                            <button type="button" onClick={() => setInstallments(Math.min(5, installments + 1))} className="p-1 bg-indigo-50 text-indigo-600 rounded">
+                                               <ChevronRight size={10} />
+                                            </button>
+                                         </div>
+                                      </div>
+                                      <div className="flex justify-between items-center px-1 pt-1 border-t border-indigo-50">
+                                         <span className="text-[8px] font-black text-purple-400 uppercase">TOTAL C/ JUROS (+{settings.crediarioInterestRate}%)</span>
+                                         <span className="font-mono font-black text-xs text-purple-600 italic">R$ {formatCurrency(calculatedInstallment * installments)}</span>
+                                      </div>
+                                      <div className="text-center bg-indigo-50 py-1 rounded">
+                                         <span className="text-[9px] font-black text-indigo-700">{installments}x R$ {formatCurrency(calculatedInstallment)}</span>
+                                      </div>
+                                   </div>
+                                </div>
+                              );
+                           })()}
                         </div>
                     )}
 
