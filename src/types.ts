@@ -122,6 +122,8 @@ export interface FiadoRecord {
   status: 'pending' | 'paid';
   items: SaleItem[];
   paymentsHistory?: FiadoPaymentHistory[];
+  installments?: number;
+  installmentValue?: number;
 }
 
 export interface CashLog {

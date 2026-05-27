@@ -374,7 +374,9 @@ const SalesViewComponent = ({ setCurrentView }: { setCurrentView: (view: string)
              dueDate: p.f12DueDate || new Date().toISOString(),
              vendedor: assignedVendedor,
              status: 'pending',
-             items: [...cart]
+             items: [...cart],
+             installments: p.installments,
+             installmentValue: p.installmentValue
           };
        });
        setFiados((prev: FiadoRecord[]) => [...newFiados, ...prev]);

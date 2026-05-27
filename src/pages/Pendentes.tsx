@@ -170,13 +170,26 @@ export default function Pendentes() {
       paymentsText = '\nNenhum pagamento parcial registrado.';
     }
 
-    const itemsText = f.items ? f.items.map(it => `- ${it.quantity}x ${it.name} (R$ ${formatCurrency(it.price)})`).join('\n') : '';
+    const itemsText = f.items ? f.items.map(it => `- ${it.quantity}x ${it.name}`).join('\n') : '';
+
+    const instCount = f.installments || 1;
+    const instVal = f.installmentValue || (f.totalAmount / instCount);
+    
+    const installmentDates = [];
+    const baseDate = new Date(f.dueDate);
+    for (let i = 0; i < instCount; i++) {
+      const nextDate = new Date(baseDate);
+      nextDate.setMonth(baseDate.getMonth() + i);
+      installmentDates.push(`- Parcela ${i + 1}/${instCount}: ${nextDate.toLocaleDateString('pt-BR')} (R$ ${formatCurrency(instVal)})`);
+    }
 
     const statement = `*EXTRATO DE CREDIÁRIO - SCARDSYS*\n\n` + 
       `*Cliente:* ${f.clientName}\n` +
       `*Cód. Compra:* #${f.saleId || f.id.toString().slice(-6)}\n` +
-      `*Data Inicial:* ${new Date(f.createdAt).toLocaleDateString('pt-BR')}\n` +
-      `*Data Limite:* ${dueDateStr}${isOverdue ? ' ⚠️ (CONTA EM ATRASO)' : ''}\n\n` +
+      `*Data da Compra:* ${new Date(f.createdAt).toLocaleDateString('pt-BR')}\n` +
+      `*Data de Vencimento:* ${dueDateStr}${isOverdue ? ' ⚠️ (CONTA EM ATRASO)' : ''}\n` +
+      `*Compra parcelada em:* ${instCount}x\n\n` +
+      `*VENCIMENTOS DAS PARCELAS:*\n${installmentDates.join('\n')}\n\n` +
       `*PRODUTOS ADQUIRIDOS:*\n${itemsText}\n\n` +
       `*VALOR TOTAL COMPRA:* R$ ${formatCurrency(f.totalAmount)}\n` +
       `*PAGO ATÉ O MOMENTO:* R$ ${formatCurrency(f.totalAmount - f.remainingAmount)}\n` +
