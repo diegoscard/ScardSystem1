@@ -78,7 +78,23 @@ export default function Clientes() {
   };
 
   const filtered = useMemo(() => {
-    let result = (customers || []).filter((c: Customer) => {
+    const hydratedCustomers = (customers || []).map((c: Customer) => {
+      const customerSales = (sales || []).filter(s => s.customerId === c.id);
+      const dynamicTotalSpent = customerSales.reduce((acc, s) => acc + (s.total - (s.change || 0)), 0);
+      const dynamicLastPurchase = customerSales.length > 0 
+        ? customerSales.reduce((latest, s) => {
+            return !latest || new Date(s.date) > new Date(latest) ? s.date : latest;
+          }, '')
+        : undefined;
+
+      return {
+        ...c,
+        totalSpent: dynamicTotalSpent,
+        lastPurchase: dynamicLastPurchase
+      };
+    });
+
+    let result = hydratedCustomers.filter((c: Customer) => {
        const hasMatch = c.name.toLowerCase().includes(search.toLowerCase()) || 
               (c.document && c.document.includes(search)) || 
               (c.phone && c.phone.includes(search));
@@ -136,7 +152,8 @@ export default function Clientes() {
       message: `Informe o limite de crédito total para ${c.name}:`,
       placeholder: 'R$ 0,00',
       confirmLabel: 'Liberar Crédito',
-      cancelLabel: 'Cancelar'
+      cancelLabel: 'Cancelar',
+      isCurrency: true
     });
 
     if (res !== null) {

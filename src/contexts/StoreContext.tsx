@@ -128,7 +128,7 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   const prompt = useCallback((options: PromptOptions) => {
-    setPromptInputValue('');
+    setPromptInputValue(options.isCurrency ? 'R$ 0,00' : '');
     return new Promise<string | null>((resolve) => {
       setPromptData({ options, resolve });
     });
@@ -282,7 +282,15 @@ export const StoreProvider = ({ children }: { children: ReactNode }) => {
                     placeholder={promptData.options.placeholder || 'Digite aqui...'}
                     className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-6 py-4 text-sm font-bold focus:border-indigo-500 focus:bg-white outline-none transition-all"
                     value={promptInputValue}
-                    onChange={e => setPromptInputValue(e.target.value)}
+                    onChange={e => {
+                      if (promptData.options.isCurrency) {
+                        const digits = e.target.value.replace(/\D/g, '');
+                        const val = Number(digits) / 100;
+                        setPromptInputValue(`R$ ${val.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
+                      } else {
+                        setPromptInputValue(e.target.value);
+                      }
+                    }}
                     onKeyDown={e => {
                       if (e.key === 'Enter') handlePromptAction(promptInputValue);
                       if (e.key === 'Escape') handlePromptAction(null);

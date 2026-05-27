@@ -227,4 +227,5 @@ export interface PromptOptions {
   placeholder?: string;
   confirmLabel?: string;
   cancelLabel?: string;
+  isCurrency?: boolean;
 }
