@@ -9,7 +9,7 @@ import { FiadoRecord, CashLog, CashSession } from '../types';
 import { formatCurrency, parseCurrency } from '../utils/helpers';
 
 export default function Pendentes() {
-  const { user, fiados, setFiados, cashSession, setCashSession, notify, settings, confirm } = useStore();
+  const { user, fiados, setFiados, cashSession, setCashSession, notify, settings, confirm, customers } = useStore();
   const [search, setSearch] = useState('');
 
   const calculateLateCharges = (f: FiadoRecord) => {
@@ -164,13 +164,13 @@ export default function Pendentes() {
     let paymentsText = '';
     if (f.paymentsHistory && f.paymentsHistory.length > 0) {
       paymentsText = '\n*HISTÓRICO DE PARCELAS PAGAS:*\n' + f.paymentsHistory.map(p => {
-        return `- ${new Date(p.date).toLocaleDateString('pt-BR')} ${new Date(p.date).toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'})}: R$ ${formatCurrency(p.amount)} via ${p.method}`;
+        return `* ${new Date(p.date).toLocaleDateString('pt-BR')} ${new Date(p.date).toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'})}: R$ ${formatCurrency(p.amount)} via ${p.method}`;
       }).join('\n');
     } else {
       paymentsText = '\nNenhum pagamento parcial registrado.';
     }
 
-    const itemsText = f.items ? f.items.map(it => `- ${it.quantity}x ${it.name}`).join('\n') : '';
+    const itemsText = f.items ? f.items.map(it => `* ${it.quantity}x ${it.name}`).join('\n') : '';
 
     const instCount = f.installments || 1;
     const instVal = f.installmentValue || (f.totalAmount / instCount);
@@ -180,11 +180,20 @@ export default function Pendentes() {
     for (let i = 0; i < instCount; i++) {
       const nextDate = new Date(baseDate);
       nextDate.setMonth(baseDate.getMonth() + i);
-      installmentDates.push(`- Parcela ${i + 1}/${instCount}: ${nextDate.toLocaleDateString('pt-BR')} (R$ ${formatCurrency(instVal)})`);
+      installmentDates.push(`* Parcela ${i + 1}/${instCount}: ${nextDate.toLocaleDateString('pt-BR')} (R$ ${formatCurrency(instVal)})`);
     }
+
+    const customer = (customers || []).find((c: any) => c.name.trim().toUpperCase() === f.clientName.trim().toUpperCase());
+    const limit = customer?.creditLimit || 0;
+    const used = (fiados || [])
+      .filter((rec: FiadoRecord) => rec.clientName.trim().toUpperCase() === f.clientName.trim().toUpperCase() && rec.status === 'pending')
+      .reduce((acc, rec) => acc + rec.remainingAmount, 0);
+    const available = Math.max(0, limit - used);
 
     const statement = `*EXTRATO DE CREDIÁRIO - SCARDSYS*\n\n` + 
       `*Cliente:* ${f.clientName}\n` +
+      `*Limite disponível:* R$ ${formatCurrency(available)}\n` +
+      `*Limite utilizado:* R$ ${formatCurrency(used)}\n` +
       `*Cód. Compra:* #${f.saleId || f.id.toString().slice(-6)}\n` +
       `*Data da Compra:* ${new Date(f.createdAt).toLocaleDateString('pt-BR')}\n` +
       `*Data de Vencimento:* ${dueDateStr}${isOverdue ? ' ⚠️ (CONTA EM ATRASO)' : ''}\n` +
