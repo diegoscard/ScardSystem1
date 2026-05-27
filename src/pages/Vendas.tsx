@@ -907,7 +907,7 @@ const SalesViewComponent = ({ setCurrentView }: { setCurrentView: (view: string)
                                 const d = new Date();
                                 d.setDate(d.getDate() + 30);
                                 setF12Date(d.toISOString().split('T')[0]);
-                                setInstallments(3);
+                                setInstallments(2);
                             }
                         } else {
                             setInstallments(1);
@@ -967,9 +967,9 @@ const SalesViewComponent = ({ setCurrentView }: { setCurrentView: (view: string)
                                    </div>
                                    <div className="bg-white p-2 rounded-lg border border-indigo-100 flex flex-col gap-2">
                                       <div className="flex justify-between items-center px-1">
-                                         <span className="text-[8px] font-black text-indigo-400 uppercase">PARCELAS (3-5X)</span>
+                                         <span className="text-[8px] font-black text-indigo-400 uppercase">PARCELAS (2-5X)</span>
                                          <div className="flex items-center gap-2">
-                                            <button type="button" onClick={() => setInstallments(Math.max(3, installments - 1))} className="p-1 bg-indigo-50 text-indigo-600 rounded">
+                                            <button type="button" onClick={() => setInstallments(Math.max(2, installments - 1))} className="p-1 bg-indigo-50 text-indigo-600 rounded">
                                                <ChevronLeft size={10} />
                                             </button>
                                             <span className="font-bold text-[11px] min-w-[12px] text-center">{installments}</span>
