@@ -12,27 +12,76 @@ export default function Pendentes() {
   const { user, fiados, setFiados, cashSession, setCashSession, notify, settings, confirm, customers } = useStore();
   const [search, setSearch] = useState('');
 
-  const calculateLateCharges = (f: FiadoRecord) => {
-    if (f.status !== 'pending' || !f.dueDate) return 0;
+  const getInstallmentPlan = (f: FiadoRecord) => {
+    const instCount = f.installments || 1;
+    const instVal = f.installmentValue || (f.totalAmount / instCount);
+    const totalPaid = f.totalAmount - f.remainingAmount;
     const now = new Date();
-    const dueDate = new Date(f.dueDate);
-    if (now <= dueDate) return 0;
+    
+    const plan = [];
+    let appliedFee = false;
+    
+    for (let i = 0; i < instCount; i++) {
+      const instDueDate = new Date(f.createdAt);
+      instDueDate.setMonth(instDueDate.getMonth() + (i + 1));
+      const cumulVal = (i + 1) * instVal;
+      const isPaid = totalPaid >= (cumulVal - 0.01);
+      
+      let interest = 0;
+      const isOverdue = !isPaid && now > instDueDate;
+      
+      if (isOverdue) {
+         const diffTime = Math.abs(now.getTime() - instDueDate.getTime());
+         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+         interest = (instVal * (settings.crediarioLateInterestPerDay || 0) / 100) * diffDays;
+         if (!appliedFee) {
+            interest += (settings.crediarioLateFee || 0);
+            appliedFee = true;
+         }
+      }
+      
+      let payDate = '';
+      if (isPaid && f.paymentsHistory) {
+         let acc = 0;
+         for (const p of f.paymentsHistory) {
+            acc += p.amount;
+            if (acc >= cumulVal - 0.01) {
+               payDate = new Date(p.date).toLocaleDateString('pt-BR');
+               break;
+            }
+         }
+      }
 
-    const diffTime = Math.abs(now.getTime() - dueDate.getTime());
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      plan.push({
+        label: `Parcela ${i + 1}/${instCount}`,
+        dueDate: instDueDate,
+        dateStr: instDueDate.toLocaleDateString('pt-BR'),
+        val: instVal,
+        interest,
+        total: instVal + interest,
+        isPaid,
+        isOverdue,
+        payDate
+      });
+    }
+    return plan;
+  };
 
-    const lateFee = (settings.crediarioLateFee || 0);
-    const dailyInterest = (f.remainingAmount * (settings.crediarioLateInterestPerDay || 0) / 100) * diffDays;
-
-    return lateFee + dailyInterest;
+  const calculateLateCharges = (f: FiadoRecord) => {
+    if (f.status !== 'pending') return 0;
+    const plan = getInstallmentPlan(f);
+    return plan.reduce((acc, p) => acc + p.interest, 0);
   };
 
   const getAdjustedBalance = (f: FiadoRecord) => {
     return f.remainingAmount + calculateLateCharges(f);
   };
   const [receivingModal, setReceivingModal] = useState<FiadoRecord | null>(null);
+  const [editingDateModal, setEditingDateModal] = useState<FiadoRecord | null>(null);
+  const [newBaseDate, setNewBaseDate] = useState('');
   const [selectedFiado, setSelectedFiado] = useState<FiadoRecord | null>(null);
   const [receiveAmount, setReceiveAmount] = useState(0);
+  const [selectedInstallments, setSelectedInstallments] = useState<number[]>([]);
   const [receiveMethod, setReceiveMethod] = useState('Dinheiro');
   const [filterTab, setFilterTab] = useState<'all_pending' | 'overdue' | 'paid'>('all_pending');
 
@@ -107,13 +156,21 @@ export default function Pendentes() {
 
     const updatedFiados: FiadoRecord[] = fiados.map((f: FiadoRecord): FiadoRecord => {
        if (f.id === receivingModal.id) {
+          const instCount = f.installments || 1;
+          const instVal = f.installmentValue || (f.totalAmount / instCount);
+          const totalPaidAfter = (f.totalAmount + lateCharges) - newRemaining;
+          const paidInstCount = Math.floor(totalPaidAfter / instVal);
+          
+          const nextDueDate = new Date(f.createdAt);
+          nextDueDate.setMonth(nextDueDate.getMonth() + (paidInstCount + 1));
+
           return {
             ...f,
             totalAmount: f.totalAmount + lateCharges,
             remainingAmount: newRemaining,
             status: isFullyPaid ? 'paid' : 'pending',
             paymentsHistory: [...(f.paymentsHistory || []), newPaymentEntry],
-            dueDate: isFullyPaid ? f.dueDate : new Date().toISOString() // Reset due date if partially paid? Or keep it?
+            dueDate: isFullyPaid ? f.dueDate : nextDueDate.toISOString()
           };
        }
        return f;
@@ -155,6 +212,7 @@ export default function Pendentes() {
 
     setReceivingModal(null);
     setReceiveAmount(0);
+    setSelectedInstallments([]);
   };
 
   const handleCopyStatement = (f: FiadoRecord) => {
@@ -163,11 +221,11 @@ export default function Pendentes() {
     
     let paymentsText = '';
     if (f.paymentsHistory && f.paymentsHistory.length > 0) {
-      paymentsText = '\n*HISTÓRICO DE PARCELAS PAGAS:*\n' + f.paymentsHistory.map(p => {
+      paymentsText = '\n\n*HISTÓRICO DE PARCELAS PAGAS:*\n' + f.paymentsHistory.map(p => {
         return `* ${new Date(p.date).toLocaleDateString('pt-BR')} ${new Date(p.date).toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'})}: R$ ${formatCurrency(p.amount)} via ${p.method}`;
       }).join('\n');
     } else {
-      paymentsText = '\nNenhum pagamento parcial registrado.';
+      paymentsText = '\n\nNenhum pagamento parcial registrado.';
     }
 
     const itemsText = f.items ? f.items.map(it => `* ${it.quantity}x ${it.name}`).join('\n') : '';
@@ -193,10 +251,9 @@ export default function Pendentes() {
     const statement = `*EXTRATO DE CREDIÁRIO - SCARDSYS*\n\n` + 
       `*Cliente:* ${f.clientName}\n` +
       `*Limite disponível:* R$ ${formatCurrency(available)}\n` +
-      `*Limite utilizado:* R$ ${formatCurrency(used)}\n` +
+      `*Limite utilizado:* R$ ${formatCurrency(used)}\n\n` + 
       `*Cód. Compra:* #${f.saleId || f.id.toString().slice(-6)}\n` +
       `*Data da Compra:* ${new Date(f.createdAt).toLocaleDateString('pt-BR')}\n` +
-      `*Data de Vencimento:* ${dueDateStr}${isOverdue ? ' ⚠️ (CONTA EM ATRASO)' : ''}\n` +
       `*Compra parcelada em:* ${instCount}x\n\n` +
       `*VENCIMENTOS DAS PARCELAS:*\n${installmentDates.join('\n')}\n\n` +
       `*PRODUTOS ADQUIRIDOS:*\n${itemsText}\n\n` +
@@ -230,6 +287,34 @@ export default function Pendentes() {
       setFiados((prev: FiadoRecord[]) => prev.filter(f => f.id !== id));
       notify('Registro de crediário excluído com sucesso!', 'success');
     }
+  };
+
+  const handleUpdateBaseDate = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingDateModal || !newBaseDate) return;
+
+    const pickedDate = new Date(`${newBaseDate}T12:00:00`);
+    const referenceDate = new Date(pickedDate);
+    referenceDate.setMonth(referenceDate.getMonth() - 1);
+
+    const updatedFiados: FiadoRecord[] = fiados.map(f => {
+      if (f.id === editingDateModal.id) {
+        const instCount = f.installments || 1;
+        const finalDueDate = new Date(referenceDate);
+        finalDueDate.setMonth(referenceDate.getMonth() + instCount);
+
+        return {
+          ...f,
+          createdAt: referenceDate.toISOString(),
+          dueDate: finalDueDate.toISOString()
+        };
+      }
+      return f;
+    });
+
+    setFiados(updatedFiados);
+    setEditingDateModal(null);
+    notify('Vencimentos reprogramados com sucesso!', 'success');
   };
 
   return (
@@ -381,31 +466,19 @@ export default function Pendentes() {
                        </td>
                        <td className="px-6 py-4 text-center">
                           <div className="flex items-center justify-center gap-2" onClick={e => e.stopPropagation()}>
-                             {f.status === 'pending' && (
-                               <button 
-                                 onClick={() => { setReceivingModal(f); setReceiveAmount(getAdjustedBalance(f)); }}
-                                 className="bg-green-600 text-white px-3.5 py-1.5 rounded-xl font-black text-[10px] uppercase shadow-md hover:bg-green-700 active:scale-95 transition-all flex items-center gap-1"
-                               >
-                                  <DollarSign size={13}/> Quitar
-                               </button>
-                             )}
-                             <button
-                               onClick={() => handleCopyStatement(f)}
-                               className="p-2 bg-slate-100 text-slate-500 hover:text-indigo-600 hover:bg-slate-200/60 rounded-xl transition-all"
-                               title="Copiar Extrato"
-                             >
-                                <Copy size={14}/>
-                             </button>
-                             {f.status === 'pending' && (
-                               <button
-                                 onClick={() => handleSendWhatsAppNotification(f)}
-                                 className="p-2 bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-white rounded-xl transition-all"
-                                 title="Cobrança WhatsApp"
-                               >
-                                  <Send size={14}/>
-                               </button>
-                             )}
-                             <button
+                            <button
+                               onClick={() => {
+                                 const firstInst = new Date(f.createdAt);
+                                 firstInst.setMonth(firstInst.getMonth() + 1);
+                                 setEditingDateModal(f);
+                                 setNewBaseDate(firstInst.toISOString().split('T')[0]);
+                               }}
+                               className="p-2 bg-indigo-50 text-indigo-400 hover:bg-indigo-600 hover:text-white rounded-xl transition-all"
+                               title="Alterar Vencimentos"
+                            >
+                               <Calendar size={14}/>
+                            </button>
+                            <button
                                onClick={() => handleDelete(f.id)}
                                className="p-2 bg-red-50 text-red-400 hover:bg-red-600 hover:text-white rounded-xl transition-all"
                                title="Excluir Registro"
@@ -430,7 +503,7 @@ export default function Pendentes() {
         {/* Detailed client statement visualised dynamically */}
         {selectedFiado && (
           <div className="fixed inset-0 flex items-center justify-center p-6 z-[200] animate-in fade-in">
-             <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setSelectedFiado(null)}/>
+             <div className="fixed inset-0" onClick={() => setSelectedFiado(null)}/>
              <div className="bg-white rounded-[2.5rem] w-full max-w-2xl shadow-2xl relative overflow-hidden flex flex-col max-h-[85vh]">
                 <div className="p-8 border-b border-slate-100 flex justify-between items-start shrink-0">
                    <div className="flex gap-4 items-center">
@@ -484,7 +557,7 @@ export default function Pendentes() {
                          </div>
                          <div className="flex-1 min-w-0">
                             <p className="text-[9px] font-black text-indigo-400 uppercase tracking-widest leading-none mb-1">Responsável de Venda</p>
-                            <h4 className="text-white font-black text-lg uppercase tracking-tight italic truncate">{selectedFiado.clientName}</h4>
+                            <h4 className="text-white font-black text-base uppercase tracking-tight italic truncate">{selectedFiado.clientName}</h4>
                             <p className="text-[9px] text-zinc-500 font-bold italic">Registro indexado pelo vendedor: {selectedFiado.vendedor || 'Padrão'}</p>
                          </div>
                       </div>
@@ -570,7 +643,7 @@ export default function Pendentes() {
 
                    {selectedFiado.status === 'pending' && (
                      <button 
-                      onClick={() => { setReceivingModal(selectedFiado); setReceiveAmount(selectedFiado.remainingAmount); setSelectedFiado(null); }}
+                      onClick={() => { setReceivingModal(selectedFiado); setReceiveAmount(0); setSelectedInstallments([]); setSelectedFiado(null); }}
                       className="flex-1 bg-slate-900 text-white py-4 rounded-xl font-black uppercase tracking-wider shadow-xl hover:bg-slate-800 active:scale-[0.98] transition-all flex items-center justify-center gap-2 text-xs"
                      >
                         <DollarSign size={16} className="text-green-500"/> Dar Baixa
@@ -600,6 +673,66 @@ export default function Pendentes() {
                    </div>
                 </div>
 
+                {/* Installments Quick Settle List */}
+                <div className="space-y-2 max-h-44 overflow-y-auto custom-scroll pr-1">
+                   <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Parcelas do Plano</p>
+                   {(() => {
+                      const installmentsList = getInstallmentPlan(receivingModal);
+                      return installmentsList.map((ins, idx) => {
+                         const isSelected = selectedInstallments.includes(idx);
+                         const disabled = ins.isPaid;
+                         return (
+                            <div 
+                              key={idx} 
+                              onClick={() => {
+                                 if (disabled) return;
+                                 let newSelected = [...selectedInstallments];
+                                 if (isSelected) {
+                                    newSelected = newSelected.filter(i => i !== idx);
+                                 } else {
+                                    newSelected.push(idx);
+                                 }
+                                 setSelectedInstallments(newSelected);
+                                 const newTotal = newSelected.reduce((sum, i) => sum + installmentsList[i].total, 0);
+                                 setReceiveAmount(newTotal);
+                              }}
+                              className={`flex items-center justify-between p-3 border rounded-xl transition-all ${disabled ? 'cursor-not-allowed opacity-80' : 'cursor-pointer'} group ${ins.isPaid ? 'bg-emerald-50 border-emerald-100' : isSelected ? 'bg-indigo-50 border-indigo-500 ring-2 ring-indigo-500/10' : 'bg-slate-50 border-slate-100 hover:border-indigo-200'}`}
+                            >
+                               <div className="flex flex-col">
+                                  <div className="flex items-center gap-2">
+                                     <span className={`text-[10px] font-black uppercase leading-none ${ins.isPaid ? 'text-emerald-700' : isSelected ? 'text-indigo-700' : 'text-slate-800'}`}>{ins.label}</span>
+                                     {ins.isPaid && (
+                                       <span className="bg-emerald-600 text-white text-[7px] px-1.5 py-0.5 rounded-md font-black uppercase tracking-tighter">Liquidada</span>
+                                     )}
+                                     {ins.isOverdue && !ins.isPaid && (
+                                       <span className="bg-red-600 text-white text-[7px] px-1.5 py-0.5 rounded-md font-black uppercase tracking-tighter animate-pulse">Atrasada</span>
+                                     )}
+                                  </div>
+                                  <span className="text-[8px] font-bold text-slate-400 mt-1">
+                                    {ins.isPaid ? `Paga em: ${ins.payDate}` : `Vencimento: ${ins.dateStr}`}
+                                  </span>
+                                  <div className="flex flex-col">
+                                     <span className={`text-[9px] font-black font-mono mt-0.5 ${ins.isPaid ? 'text-emerald-600' : 'text-indigo-600'}`}>R$ {formatCurrency(ins.total)}</span>
+                                     {ins.interest > 0 && !ins.isPaid && (
+                                       <span className="text-[7px] font-bold text-red-500 uppercase tracking-tighter italic">+ R$ {formatCurrency(ins.interest)} juros/multa</span>
+                                     )}
+                                  </div>
+                               </div>
+                               {ins.isPaid ? (
+                                  <div className="w-5 h-5 rounded-full bg-emerald-600 flex items-center justify-center text-white">
+                                     <CheckCircle2 size={12} />
+                                  </div>
+                               ) : isSelected && (
+                                  <div className="w-5 h-5 rounded-full bg-indigo-600 flex items-center justify-center text-white">
+                                     <CheckCircle2 size={12} />
+                                  </div>
+                               )}
+                            </div>
+                         );
+                      });
+                   })()}
+                </div>
+
                 <div className="space-y-4">
                    <div>
                       <label className="text-[9px] font-black text-slate-400 uppercase block mb-1">Valor do Pagamento</label>
@@ -607,8 +740,8 @@ export default function Pendentes() {
                          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-lg font-black text-slate-300">R$</span>
                          <input 
                            type="text" 
-                           className="w-full pl-12 pr-4 py-4 bg-slate-50 border-2 rounded-2xl text-2xl font-black text-indigo-700 outline-none focus:border-indigo-500 animate-pulse"
-                           value={formatCurrency(receiveAmount)}
+                           className="w-full pl-12 pr-4 py-0 bg-slate-50 border-2 rounded-2xl text-[20px] font-black text-indigo-700 outline-none focus:border-indigo-500 animate-pulse"
+                           value={receiveAmount === 0 ? '' : formatCurrency(receiveAmount)}
                            onChange={(e) => setReceiveAmount(parseCurrency(e.target.value))}
                            onFocus={(e) => e.target.select()}
                          />
@@ -632,6 +765,44 @@ export default function Pendentes() {
                 <div className="flex gap-3 pt-4">
                    <button type="button" onClick={() => setReceivingModal(null)} className="flex-1 py-4 text-slate-400 font-black uppercase text-[10px]">Cancelar</button>
                    <button type="submit" className="flex-[2] py-4 bg-green-600 text-white font-black rounded-2xl uppercase text-[10px] shadow-xl hover:bg-green-700">Confirmar Recebimento</button>
+                </div>
+             </form>
+          </div>
+        )}
+
+        {editingDateModal && (
+          <div className="fixed inset-0 flex items-center justify-center p-6 z-[200] animate-in fade-in">
+             <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={() => setEditingDateModal(null)}/>
+             <form onSubmit={handleUpdateBaseDate} className="bg-white p-8 rounded-[2.5rem] w-full max-w-sm shadow-2xl space-y-6 relative z-10">
+                <div className="flex justify-between items-center border-b pb-4">
+                   <h3 className="text-xl font-black text-slate-900 uppercase italic flex items-center gap-2">
+                     <Calendar className="text-indigo-600" />
+                     Reprogramar Parcelas
+                   </h3>
+                   <button type="button" onClick={() => setEditingDateModal(null)} className="text-slate-300 hover:text-slate-500"><X size={24}/></button>
+                </div>
+
+                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                   <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Cliente</span>
+                   <p className="text-sm font-black text-slate-700 uppercase">{editingDateModal.clientName}</p>
+                   <p className="text-[8px] font-black text-indigo-500 uppercase mt-1">Parcelado em {editingDateModal.installments || 1}x</p>
+                </div>
+
+                <div>
+                   <label className="text-[9px] font-black text-slate-400 uppercase block mb-1">Data da Primeira Parcela</label>
+                   <input 
+                     type="date" 
+                     required
+                     className="w-full px-4 py-4 bg-slate-50 border-2 rounded-2xl text-lg font-black text-slate-700 outline-none focus:border-indigo-500"
+                     value={newBaseDate}
+                     onChange={(e) => setNewBaseDate(e.target.value)}
+                   />
+                   <p className="mt-2 text-[8px] font-bold text-slate-400 uppercase italic">As demais parcelas serão calculadas automaticamente de 30 em 30 dias a partir desta data.</p>
+                </div>
+
+                <div className="flex gap-3 pt-4">
+                   <button type="button" onClick={() => setEditingDateModal(null)} className="flex-1 py-4 text-slate-400 font-black uppercase text-[10px]">Cancelar</button>
+                   <button type="submit" className="flex-[2] py-4 bg-indigo-600 text-white font-black rounded-2xl uppercase text-[10px] shadow-xl hover:bg-indigo-700">Salvar Alterações</button>
                 </div>
              </form>
           </div>
