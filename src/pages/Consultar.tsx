@@ -156,11 +156,15 @@ export default function Consultar() {
                   <th className="px-6 py-4">Detalhes</th>
                   <th className="px-6 py-4 text-right">Preço de Venda</th>
                   <th className="px-6 py-4 text-center">Estoque Atual</th>
+                  <th className="px-6 py-4 text-center">Ações</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {filteredProducts.map((p) => (
-                  <tr key={p.id} className={`transition-all ${p.stock === 0 ? 'bg-red-50/50 hover:bg-red-50' : 'hover:bg-slate-50'}`}>
+                  <tr 
+                    key={p.id} 
+                    className={`transition-all ${p.stock === 0 ? 'bg-red-50/50 hover:bg-red-50' : 'hover:bg-slate-50'}`}
+                  >
                     <td className="px-6 py-4">
                       <div className="flex flex-col">
                         <span className={`font-bold text-sm ${p.stock === 0 ? 'text-red-700' : 'text-slate-800'}`}>{p.name}</span>
@@ -183,11 +187,24 @@ export default function Consultar() {
                           {p.stock} un
                        </span>
                     </td>
+                    <td className="px-6 py-4 text-center" onClick={(e) => e.stopPropagation()}>
+                       <button
+                         onClick={() => {
+                           const text = `*Nome:* ${p.name}\n*Tamanho:* ${p.size || 'N/A'}\n*Cor:* ${p.color || 'N/A'}\n*Preço:* R$ ${formatCurrency(p.price)}`;
+                           navigator.clipboard.writeText(text);
+                           notify('Informações da peça copiadas!', 'success');
+                         }}
+                         className="p-2.5 bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-white rounded-xl transition-all flex items-center justify-center mx-auto shadow-sm"
+                         title="Copiar para WhatsApp"
+                       >
+                         <Copy size={13} />
+                       </button>
+                    </td>
                   </tr>
                 ))}
                 {filteredProducts.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="py-20 text-center text-slate-300 font-bold italic uppercase tracking-widest">Nenhum produto {isExact ? 'idêntico' : ''} encontrado...</td>
+                    <td colSpan={6} className="py-20 text-center text-slate-300 font-bold italic uppercase tracking-widest">Nenhum produto {isExact ? 'idêntico' : ''} encontrado...</td>
                   </tr>
                 )}
               </tbody>
