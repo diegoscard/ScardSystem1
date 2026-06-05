@@ -12,9 +12,14 @@ export default function Pendentes() {
   const { user, fiados, setFiados, cashSession, setCashSession, notify, settings, confirm, customers } = useStore();
   const [search, setSearch] = useState('');
 
-  const getInstallmentPlan = (f: FiadoRecord) => {
+  const getInstallmentPlan = (f: FiadoRecord, forceExempt?: boolean) => {
     const instCount = f.installments || 1;
-    const instVal = f.installmentValue || (f.totalAmount / instCount);
+    const interestFactor = 1 + ((settings.crediarioInterestRate || 0) / 100);
+    const isExempt = forceExempt !== undefined ? forceExempt : (receivingModal && receivingModal.id === f.id && exemptInterest);
+
+    const baseInstVal = f.installmentValue || (f.totalAmount / instCount);
+    const instVal = isExempt ? (baseInstVal / interestFactor) : baseInstVal;
+    
     const totalPaid = f.totalAmount - f.remainingAmount;
     const now = new Date();
     
@@ -24,19 +29,25 @@ export default function Pendentes() {
     for (let i = 0; i < instCount; i++) {
       const instDueDate = new Date(f.createdAt);
       instDueDate.setMonth(instDueDate.getMonth() + (i + 1));
-      const cumulVal = (i + 1) * instVal;
+      const cumulVal = (i + 1) * baseInstVal;
       const isPaid = totalPaid >= (cumulVal - 0.01);
       
       let interest = 0;
       const isOverdue = !isPaid && now > instDueDate;
       
       if (isOverdue) {
-         const diffTime = Math.abs(now.getTime() - instDueDate.getTime());
-         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-         interest = (instVal * (settings.crediarioLateInterestPerDay || 0) / 100) * diffDays;
-         if (!appliedFee) {
-            interest += (settings.crediarioLateFee || 0);
-            appliedFee = true;
+         let shouldApplyInterest = true;
+         if (isExempt) {
+            shouldApplyInterest = false;
+         }
+         if (shouldApplyInterest) {
+            const diffTime = Math.abs(now.getTime() - instDueDate.getTime());
+            const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            interest = (instVal * (settings.crediarioLateInterestPerDay || 0) / 100) * diffDays;
+            if (!appliedFee) {
+               interest += (settings.crediarioLateFee || 0);
+               appliedFee = true;
+            }
          }
       }
       
@@ -74,9 +85,25 @@ export default function Pendentes() {
   };
 
   const getAdjustedBalance = (f: FiadoRecord) => {
+    if (f.status !== 'pending') return 0;
+    const isExempt = (receivingModal && receivingModal.id === f.id && exemptInterest);
+    if (isExempt) {
+      const interestFactor = 1 + ((settings.crediarioInterestRate || 0) / 100);
+      return Math.max(0, f.remainingAmount / interestFactor);
+    }
     return f.remainingAmount + calculateLateCharges(f);
   };
   const [receivingModal, setReceivingModal] = useState<FiadoRecord | null>(null);
+  const [exemptInterest, setExemptInterest] = useState(false);
+
+  const handleToggleExemptInterest = (checked: boolean) => {
+    setExemptInterest(checked);
+    if (receivingModal) {
+      const plan = getInstallmentPlan(receivingModal, checked);
+      const newTotal = selectedInstallments.reduce((sum, idx) => sum + plan[idx].total, 0);
+      setReceiveAmount(newTotal);
+    }
+  };
   const [editingDateModal, setEditingDateModal] = useState<FiadoRecord | null>(null);
   const [newBaseDate, setNewBaseDate] = useState('');
   const [selectedFiado, setSelectedFiado] = useState<FiadoRecord | null>(null);
@@ -143,8 +170,11 @@ export default function Pendentes() {
       return;
     }
 
-    const lateCharges = calculateLateCharges(receivingModal);
-    const newRemaining = Math.max(0, (receivingModal.remainingAmount + lateCharges) - receiveAmount);
+    const interestFactor = 1 + ((settings.crediarioInterestRate || 0) / 100);
+    const lateCharges = exemptInterest ? 0 : calculateLateCharges(receivingModal);
+    const amortizedAmount = exemptInterest ? (receiveAmount * interestFactor) : receiveAmount;
+
+    const newRemaining = Math.max(0, (receivingModal.remainingAmount + lateCharges) - amortizedAmount);
     const isFullyPaid = newRemaining <= 0.01;
 
     const newPaymentEntry = {
@@ -166,7 +196,7 @@ export default function Pendentes() {
 
           return {
             ...f,
-            totalAmount: f.totalAmount + lateCharges,
+            totalAmount: exemptInterest ? f.totalAmount : (f.totalAmount + lateCharges),
             remainingAmount: newRemaining,
             status: isFullyPaid ? 'paid' : 'pending',
             paymentsHistory: [...(f.paymentsHistory || []), newPaymentEntry],
@@ -643,7 +673,7 @@ export default function Pendentes() {
 
                    {selectedFiado.status === 'pending' && (
                      <button 
-                      onClick={() => { setReceivingModal(selectedFiado); setReceiveAmount(0); setSelectedInstallments([]); setSelectedFiado(null); }}
+                      onClick={() => { setReceivingModal(selectedFiado); setExemptInterest(false); setReceiveAmount(0); setSelectedInstallments([]); setSelectedFiado(null); }}
                       className="flex-1 bg-slate-900 text-white py-4 rounded-xl font-black uppercase tracking-wider shadow-xl hover:bg-slate-800 active:scale-[0.98] transition-all flex items-center justify-center gap-2 text-xs"
                      >
                         <DollarSign size={16} className="text-green-500"/> Dar Baixa
@@ -673,7 +703,22 @@ export default function Pendentes() {
                    </div>
                 </div>
 
-                {/* Installments Quick Settle List */}
+                {/* Toggle to exempt late interest */}
+                 <div className="flex items-center justify-between p-3.5 bg-amber-50/60 border border-amber-100 rounded-2xl transition-all">
+                    <div className="flex flex-col text-left">
+                       <span className="text-[10px] font-black uppercase text-amber-800 leading-none mb-0.5">Sem Juros</span>
+                       <span className="text-[8px] font-bold text-slate-400">Tirar o juros</span>
+                    </div>
+                    <input 
+                       id="exempt-interest-toggle"
+                       type="checkbox"
+                       checked={exemptInterest}
+                       onChange={(e) => handleToggleExemptInterest(e.target.checked)}
+                       className="w-4 h-4 text-amber-600 focus:ring-amber-500 border-amber-300 rounded cursor-pointer accent-amber-600 scale-125"
+                    />
+                 </div>
+
+                 {/* Installments Quick Settle List */}
                 <div className="space-y-2 max-h-44 overflow-y-auto custom-scroll pr-1">
                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Parcelas do Plano</p>
                    {(() => {
