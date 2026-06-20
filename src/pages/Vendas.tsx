@@ -43,6 +43,7 @@ const SalesViewComponent = ({ setCurrentView }: { setCurrentView: (view: string)
   const [authRequest, setAuthRequest] = useState<'entrada' | 'retirada' | null>(null);
   const [fluxoDesc, setFluxoDesc] = useState('');
   const [fluxoVal, setFluxoVal] = useState(0);
+  const [ocultarFluxo, setOcultarFluxo] = useState(false);
   const [receiptData, setReceiptData] = useState<Sale | null>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   
@@ -1192,15 +1193,23 @@ const SalesViewComponent = ({ setCurrentView }: { setCurrentView: (view: string)
              e.preventDefault();
              if (fluxoVal <= 0) return notify('O valor da movimentação deve ser positivo!', 'warning');
              const amt = modalFluxo === 'retirada' ? -fluxoVal : fluxoVal;
-             const log: CashLog = { id: Math.random().toString(36).substr(2, 9), type: modalFluxo, amount: fluxoVal, description: fluxoDesc || (modalFluxo === 'retirada' ? 'Sangria manual' : 'Entrada manual'), time: new Date().toISOString(), user: user.name };
+             const log: CashLog = { 
+                id: Math.random().toString(36).substr(2, 9), 
+                type: modalFluxo, 
+                amount: fluxoVal, 
+                description: fluxoDesc || (modalFluxo === 'retirada' ? 'Sangria manual' : 'Entrada manual'), 
+                time: new Date().toISOString(), 
+                user: user.name,
+                hiddenFromReports: modalFluxo === 'retirada' && isMasterUser ? ocultarFluxo : false
+             };
              setCashSession((prev: CashSession) => ({ ...prev, currentBalance: prev.currentBalance + amt, logs: [log, ...prev.logs] }));
-             setModalFluxo(null); setFluxoVal(0); setFluxoDesc('');
+             setModalFluxo(null); setFluxoVal(0); setFluxoDesc(''); setOcultarFluxo(false);
           }} className="bg-white p-10 rounded-[2.5rem] w-full max-w-md shadow-2xl space-y-8 animate-in fade-in zoom-in-95">
              <div className="flex justify-between items-center border-b border-slate-100 pb-4">
                <h3 className="text-2xl font-black text-slate-900 uppercase italic tracking-tighter">
                 {modalFluxo === 'retirada' ? 'Sangria de Caixa' : 'Entrada de Caixa'}
                </h3>
-               <button type="button" onClick={() => setModalFluxo(null)} className="text-slate-300 hover:text-slate-500 transition-colors"><X size={24}/></button>
+               <button type="button" onClick={() => { setModalFluxo(null); setOcultarFluxo(false); }} className="text-slate-300 hover:text-slate-500 transition-colors"><X size={24}/></button>
              </div>
              <div className="space-y-6">
                 <div className="relative group">
@@ -1224,6 +1233,21 @@ const SalesViewComponent = ({ setCurrentView }: { setCurrentView: (view: string)
                     onChange={e => setFluxoDesc(e.target.value)} 
                   />
                 </div>
+                {modalFluxo === 'retirada' && isMasterUser && (
+                  <div className="flex items-center justify-between p-3.5 bg-amber-50/60 border border-amber-100 rounded-2xl transition-all">
+                     <div className="flex flex-col text-left">
+                        <span className="text-[10px] font-black uppercase text-amber-800 leading-none mb-0.5">Ocultar dos Relatórios?</span>
+                        <span className="text-[8px] font-bold text-slate-400">Não registrar na aba de Entradas/Sangrias</span>
+                     </div>
+                     <input 
+                        id="ocultar-sangria-checkbox"
+                        type="checkbox"
+                        checked={ocultarFluxo}
+                        onChange={(e) => setOcultarFluxo(e.target.checked)}
+                        className="w-4 h-4 text-amber-600 focus:ring-amber-500 border-amber-200 rounded cursor-pointer accent-amber-600 scale-125"
+                     />
+                  </div>
+                )}
              </div>
              <button 
               type="submit" 

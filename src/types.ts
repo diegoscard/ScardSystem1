@@ -133,6 +133,7 @@ export interface CashLog {
   description: string;
   time: string;
   user: string;
+  hiddenFromReports?: boolean;
 }
 
 export interface CashSession {

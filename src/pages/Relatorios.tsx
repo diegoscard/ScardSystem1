@@ -56,7 +56,7 @@ const ReportsViewComponent = ({ setCurrentView }: { setCurrentView: (view: strin
   }, [filteredSalesByPeriod, search, filterPaymentMethod, filterValue]);
   const cashLogs = useMemo(() => {
     let allLogs: CashLog[] = []; if (cashSession) allLogs = [...cashSession.logs]; cashHistory.forEach((h: CashHistoryEntry) => { allLogs = [...allLogs, ...h.logs]; });
-    const movements = allLogs.filter(l => l.type === 'entrada' || l.type === 'retirada');
+    const movements = allLogs.filter(l => (l.type === 'entrada' || l.type === 'retirada') && !l.hiddenFromReports);
     return movements.filter(l => {
         const d = new Date(l.time); if (period === 'day') { const [y, m, day] = selectedDay.split('-').map(Number); return d.getFullYear() === y && (d.getMonth() + 1) === m && d.getDate() === day; }
         if (period === 'month') { const [y, m] = selectedMonth.split('-').map(Number); return d.getFullYear() === y && (d.getMonth() + 1) === m; }
