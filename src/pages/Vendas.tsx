@@ -1235,10 +1235,7 @@ const SalesViewComponent = ({ setCurrentView }: { setCurrentView: (view: string)
                 </div>
                 {modalFluxo === 'retirada' && isMasterUser && (
                   <div className="flex items-center justify-between p-3.5 bg-amber-50/60 border border-amber-100 rounded-2xl transition-all">
-                     <div className="flex flex-col text-left">
-                        <span className="text-[10px] font-black uppercase text-amber-800 leading-none mb-0.5">Ocultar dos Relatórios?</span>
-                        <span className="text-[8px] font-bold text-slate-400">Não registrar na aba de Entradas/Sangrias</span>
-                     </div>
+                     <div className="flex flex-col text-left"></div>
                      <input 
                         id="ocultar-sangria-checkbox"
                         type="checkbox"
