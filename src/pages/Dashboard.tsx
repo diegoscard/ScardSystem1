@@ -6,12 +6,17 @@ import { formatCurrency, parseCurrency } from '../utils/helpers';
 
 const DashboardViewComponent = () => {
   const { user, products, sales, cashSession, fiados, cashHistory, commTiers, setCommTiers, dbUsers: vendedores } = useStore();
-  const [period, setPeriod] = useState<'day' | 'month' | 'year'>('day');
+  const [period, setPeriod] = useState<'day' | 'month' | 'year' | 'custom'>('day');
   const [selectedDay, setSelectedDay] = useState(new Date().toISOString().slice(0, 10));
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear().toString());
+  const [customRange, setCustomRange] = useState({ 
+    start: new Date().toISOString().slice(0, 10), 
+    end: new Date().toISOString().slice(0, 10) 
+  });
   
   const [commFilterMonth, setCommFilterMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [productSearch, setProductSearch] = useState('');
 
   const filteredSales = useMemo(() => {
     return sales.filter((s: Sale) => {
@@ -27,9 +32,16 @@ const DashboardViewComponent = () => {
       if (period === 'year') {
         return d.getFullYear() === Number(selectedYear);
       }
+      if (period === 'custom') {
+        const start = new Date(customRange.start);
+        start.setHours(0, 0, 0, 0);
+        const end = new Date(customRange.end);
+        end.setHours(23, 59, 59, 999);
+        return d >= start && d <= end;
+      }
       return true;
     });
-  }, [sales, period, selectedDay, selectedMonth, selectedYear]);
+  }, [sales, period, selectedDay, selectedMonth, selectedYear, customRange]);
 
   const stats = useMemo(() => {
     let totals = { total: 0, cash: 0, pix: 0, card: 0, voucher: 0, voucherVip: 0, f12: 0, count: 0, senff: 0 };
@@ -74,6 +86,12 @@ const DashboardViewComponent = () => {
        } else if (period === 'month') {
           const [y, m] = selectedMonth.split('-').map(Number);
           matchPeriod = logDate.getFullYear() === y && (logDate.getMonth() + 1) === m;
+       } else if (period === 'custom') {
+          const start = new Date(customRange.start);
+          start.setHours(0, 0, 0, 0);
+          const end = new Date(customRange.end);
+          end.setHours(23, 59, 59, 999);
+          matchPeriod = logDate >= start && logDate <= end;
        } else {
           matchPeriod = logDate.getFullYear() === Number(selectedYear);
        }
@@ -88,9 +106,12 @@ const DashboardViewComponent = () => {
         }
     });
 
-    const productsRank = Object.values(productsCount).sort((a, b) => b.qty - a.qty).slice(0, 5);
+    const productsRank = Object.values(productsCount)
+      .filter(p => p.name.toLowerCase().includes(productSearch.toLowerCase()))
+      .sort((a, b) => b.qty - a.qty)
+      .slice(0, 5);
     return { totals, productsRank };
-  }, [filteredSales, cashSession, cashHistory, period, selectedDay, selectedMonth, selectedYear]);
+  }, [filteredSales, cashSession, cashHistory, period, selectedDay, selectedMonth, selectedYear, customRange, productSearch]);
 
   const commissionContext = useMemo(() => {
     let sellersMap: Record<string, number> = {};
@@ -143,14 +164,26 @@ const DashboardViewComponent = () => {
         <div className="flex flex-col"><h2 className="text-3xl font-black text-slate-900 tracking-tighter uppercase italic">Painel Indicadores</h2><p className="text-slate-400 font-black text-[10px] uppercase tracking-[0.2em]">Visão estratégica do negócio</p></div>
         <div className="flex flex-col items-end gap-2">
             <div className="flex bg-white p-1.5 rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                {(['day', 'month', 'year'] as const).map((p) => (
-                    <button key={p} onClick={() => setPeriod(p)} className={`px-8 py-2.5 rounded-xl text-[10px] font-black uppercase transition-all ${period === p ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100' : 'text-slate-400 hover:bg-slate-50'}`}>{p === 'day' ? 'DIA' : p === 'month' ? 'MÊS' : 'ANO'}</button>
+                {(['day', 'month', 'year', 'custom'] as const).map((p) => (
+                    <button key={p} onClick={() => setPeriod(p)} className={`px-8 py-2.5 rounded-xl text-[10px] font-black uppercase transition-all ${period === p ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100' : 'text-slate-400 hover:bg-slate-50'}`}>{p === 'day' ? 'DIA' : p === 'month' ? 'MÊS' : p === 'year' ? 'ANO' : 'PERÍODO'}</button>
                 ))}
             </div>
             <div className="flex items-center gap-3">
               {period === 'day' && (<div className="flex items-center gap-2 bg-indigo-50 px-4 py-2 rounded-xl border border-indigo-100 animate-in fade-in shadow-sm"><span className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">ESCOLHA O DIA:</span><input type="date" value={selectedDay} onChange={(e) => setSelectedDay(e.target.value)} className="bg-transparent text-sm font-black text-indigo-700 outline-none cursor-pointer" /></div>)}
               {period === 'month' && (<div className="flex items-center gap-2 bg-indigo-50 px-4 py-2 rounded-xl border border-indigo-100 animate-in fade-in shadow-sm"><span className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">ESCOLHA O MÊS:</span><input type="month" value={selectedMonth} onChange={(e) => setSelectedMonth(e.target.value)} className="bg-transparent text-sm font-black text-indigo-700 outline-none cursor-pointer" /></div>)}
               {period === 'year' && (<div className="flex items-center gap-2 bg-indigo-50 px-4 py-2 rounded-xl border border-indigo-100 animate-in fade-in shadow-sm"><span className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">ESCOLHA O ANO:</span><input type="number" min="2000" max="2100" value={selectedYear} onChange={(e) => setSelectedYear(e.target.value)} className="bg-transparent text-sm font-black text-indigo-700 outline-none cursor-pointer w-20" /></div>)}
+              {period === 'custom' && (
+                <div className="flex items-center gap-3 animate-in fade-in">
+                  <div className="flex items-center gap-2 bg-indigo-50 px-4 py-2 rounded-xl border border-indigo-100 shadow-sm">
+                    <span className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">DE:</span>
+                    <input type="date" value={customRange.start} onChange={(e) => setCustomRange(prev => ({ ...prev, start: e.target.value }))} className="bg-transparent text-sm font-black text-indigo-700 outline-none cursor-pointer" />
+                  </div>
+                  <div className="flex items-center gap-2 bg-indigo-50 px-4 py-2 rounded-xl border border-indigo-100 shadow-sm">
+                    <span className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">ATÉ:</span>
+                    <input type="date" value={customRange.end} onChange={(e) => setCustomRange(prev => ({ ...prev, end: e.target.value }))} className="bg-transparent text-sm font-black text-indigo-700 outline-none cursor-pointer" />
+                  </div>
+                </div>
+              )}
             </div>
         </div>
       </div>
@@ -179,7 +212,19 @@ const DashboardViewComponent = () => {
               </div>
            </div>
            <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm">
-              <h3 className="text-lg font-black text-slate-800 uppercase italic mb-8 flex items-center gap-2"><Trophy size={20} className="text-amber-500" /> Ranking de Produtos</h3>
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+                 <h3 className="text-lg font-black text-slate-800 uppercase italic flex items-center gap-2"><Trophy size={20} className="text-amber-500" /> Ranking de Produtos</h3>
+                 <div className="relative group w-full md:w-64">
+                    <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-indigo-500 transition-colors" />
+                    <input 
+                       type="text" 
+                       placeholder="Buscar produto no ranking..." 
+                       value={productSearch}
+                       onChange={(e) => setProductSearch(e.target.value)}
+                       className="w-full pl-11 pr-4 py-2 bg-slate-50 border border-slate-100 rounded-xl text-xs font-bold outline-none focus:border-indigo-500 focus:bg-white transition-all shadow-sm"
+                    />
+                 </div>
+              </div>
               <div className="space-y-4">
                  {stats.productsRank.length > 0 ? stats.productsRank.map((p, idx) => (
                     <div key={idx} className="bg-slate-50 p-5 rounded-3xl flex items-center justify-between border border-slate-100 hover:border-amber-200 transition-all group">
