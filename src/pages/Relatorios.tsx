@@ -288,7 +288,59 @@ const ReportsViewComponent = ({ setCurrentView }: { setCurrentView: (view: strin
            {showFluxoTab && <button onClick={() => setTab('fluxo')} className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase transition-all flex items-center gap-2 ${tab === 'fluxo' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100' : 'text-slate-400 hover:bg-slate-50'}`}><RefreshCw size={14}/> Entradas/Sangrias</button>}
            {showCashTab && <button onClick={() => setTab('cash')} className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase transition-all flex items-center gap-2 ${tab === 'cash' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100' : 'text-slate-400 hover:bg-slate-50'}`}><History size={14}/> Histórico de Caixa</button>}
       </div>
-      {tab === 'sales' && showSalesTab && (<><div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row gap-4 shrink-0 items-center"><div className="relative group flex-1 w-full"><Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" /><input type="text" placeholder="Filtrar por ID, vendedor, produto ou SKU..." className="w-full pl-11 pr-4 py-2.5 bg-slate-50 border rounded-xl text-xs font-bold outline-none focus:border-indigo-500" value={search} onChange={(e) => setSearch(e.target.value)} /></div><div className="flex flex-wrap gap-4 items-center"><select className="w-48 px-4 py-2.5 bg-slate-50 border rounded-xl text-xs font-bold outline-none focus:border-indigo-500 text-slate-600 cursor-pointer" value={filterPaymentMethod} onChange={(e) => setFilterPaymentMethod(e.target.value)}><option value="">Forma de Pagamento</option><option value="Pix">Pix</option><option value="Dinheiro">Dinheiro</option><option value="C. Débito">C. Débito</option><option value="C. Crédito">C. Crédito</option><option value="C. Parcelado">C. Parcelado</option><option value="Voucher">Voucher</option><option value="Voucher VIP">Voucher VIP</option><option value="Crediário">Crediário</option></select><div className="relative w-40"><span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-bold">R$</span><input type="text" placeholder="Valor" className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border rounded-xl text-xs font-bold outline-none focus:border-indigo-500" value={filterValue} onChange={(e) => { const val = e.target.value.replace(/\D/g, ''); setFilterValue(val ? (Number(val) / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2 }) : ''); }} /></div>{(search || filterPaymentMethod || filterValue) && (<button onClick={() => { setSearch(''); setFilterPaymentMethod(''); setFilterValue(''); }} className="text-[9px] font-black text-red-400 uppercase hover:text-red-600 transition-colors flex items-center gap-1" title="Limpar Filtros"><X size={16} /></button>)}</div></div><div className="bg-white rounded-2xl shadow-sm overflow-hidden border border-slate-200 flex-1 flex flex-col min-h-0"><div className="overflow-auto flex-1 custom-scroll"><table className="w-full text-left border-separate border-spacing-0"><thead className="bg-slate-50 sticky top-0 z-10 text-[9px] font-black text-slate-400 uppercase tracking-widest border-b"><tr><th className="px-6 py-4">Data/Hora</th><th className="px-6 py-4">ID</th><th className="px-6 py-4">Vendedor</th><th className="px-6 py-4 text-right">Total</th><th className="px-6 py-4 text-center">Itens</th><th className="px-6 py-4 text-right">Ações</th></tr></thead><tbody className="divide-y divide-slate-100">{filteredSales.map((s: Sale) => (<tr key={s.id} className="hover:bg-slate-50 transition-all group"><td className="px-6 py-4"><div className="flex flex-col"><span className="text-xs font-bold text-slate-800">{new Date(s.date).toLocaleDateString()}</span><span className="text-[9px] text-slate-400 font-mono">{new Date(s.date).toLocaleTimeString()}</span></div></td><td className="px-6 py-4 text-[10px] font-mono font-black text-indigo-600">#{s.id.toString().slice(-6)}</td><td className="px-6 py-4 text-xs font-bold text-slate-600 uppercase">{s.user}</td><td className="px-6 py-4 text-right font-black text-slate-900 font-mono text-xs">R$ {formatCurrency(s.total)}</td><td className="px-6 py-4 text-center"><span className="bg-slate-100 px-2 py-0.5 rounded text-[10px] font-black text-slate-500">{s.items.length}</span></td><td className="px-6 py-4 text-right"><div className="flex justify-end gap-2"><button onClick={() => setSelectedSale(s)} className="p-2 text-slate-400 hover:text-indigo-600" title="Ver Detalhes"><Eye size={16}/></button>{isMasterUser && <button onClick={() => { setEditingSale(s); setEditSeller(s.user); setEditSalePayments(s.payments.map(p => ({...p}))); setEditSaleMode('options'); }} className="p-2 text-slate-400 hover:text-amber-500" title="Editar Venda (MASTER)"><Edit size={16}/></button>}{canDelete && <button onClick={() => handleDeleteSale(s)} className="p-2 text-slate-400 hover:text-red-600" title="Excluir"><Trash2 size={16}/></button>}</div></td></tr>))}{filteredSales.length === 0 && (<tr><td colSpan={6} className="py-20 text-center text-slate-300 font-bold italic">Nenhuma venda encontrada para este período...</td></tr>)}</tbody></table></div></div></>)}
+      {tab === 'sales' && showSalesTab && (<><div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row gap-4 shrink-0 items-center"><div className="relative group flex-1 w-full"><Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" /><input type="text" placeholder="Filtrar por ID, vendedor, produto ou SKU..." className="w-full pl-11 pr-4 py-2.5 bg-slate-50 border rounded-xl text-xs font-bold outline-none focus:border-indigo-500" value={search} onChange={(e) => setSearch(e.target.value)} /></div><div className="flex flex-wrap gap-4 items-center"><select className="w-48 px-4 py-2.5 bg-slate-50 border rounded-xl text-xs font-bold outline-none focus:border-indigo-500 text-slate-600 cursor-pointer" value={filterPaymentMethod} onChange={(e) => setFilterPaymentMethod(e.target.value)}><option value="">Forma de Pagamento</option><option value="Pix">Pix</option><option value="Dinheiro">Dinheiro</option><option value="C. Débito">C. Débito</option><option value="C. Crédito">C. Crédito</option><option value="C. Parcelado">C. Parcelado</option><option value="C. SENFF">C. SENFF</option><option value="BÔNUSCRED">BÔNUSCRED</option><option value="Voucher">Voucher</option><option value="Voucher VIP">Voucher VIP</option><option value="Crediário">Crediário</option></select><div className="relative w-40"><span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-bold">R$</span><input type="text" placeholder="Valor" className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border rounded-xl text-xs font-bold outline-none focus:border-indigo-500" value={filterValue} onChange={(e) => { const val = e.target.value.replace(/\D/g, ''); setFilterValue(val ? (Number(val) / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2 }) : ''); }} /></div>{(search || filterPaymentMethod || filterValue) && (<button onClick={() => { setSearch(''); setFilterPaymentMethod(''); setFilterValue(''); }} className="text-[9px] font-black text-red-400 uppercase hover:text-red-600 transition-colors flex items-center gap-1" title="Limpar Filtros"><X size={16} /></button>)}</div></div><div className="bg-white rounded-2xl shadow-sm overflow-hidden border border-slate-200 flex-1 flex flex-col min-h-0"><div className="overflow-auto flex-1 custom-scroll"><table className="w-full text-left border-separate border-spacing-0"><thead className="bg-slate-50 sticky top-0 z-10 text-[9px] font-black text-slate-400 uppercase tracking-widest border-b">
+  <tr>
+    <th className="px-6 py-4">Data/Hora</th>
+    <th className="px-6 py-4">ID</th>
+    <th className="px-6 py-4">Vendedor</th>
+    <th className="px-6 py-4 text-right">Total</th>
+    <th className="px-6 py-4 text-center">Itens</th>
+    <th className="px-6 py-4 text-right">Ações</th>
+  </tr>
+</thead>
+<tbody className="divide-y divide-slate-100">
+  {filteredSales.map((s: Sale) => (
+    <tr key={s.id} className="hover:bg-slate-50 transition-all group">
+      <td className="px-6 py-4">
+        <div className="flex flex-col">
+          <span className="text-xs font-bold text-slate-800">{new Date(s.date).toLocaleDateString()}</span>
+          <span className="text-[9px] text-slate-400 font-mono">{new Date(s.date).toLocaleTimeString()}</span>
+        </div>
+      </td>
+      <td className="px-6 py-4 text-[10px] font-mono font-black text-indigo-600">
+        <div className="flex items-center gap-1.5">
+          #{s.id.toString().slice(-6)}
+          {s.discountOverride && (
+            <ShieldAlert size={12} className="text-red-500" />
+          )}
+        </div>
+      </td>
+      <td className="px-6 py-4 text-xs font-bold text-slate-600 uppercase">{s.user}</td>
+      <td className="px-6 py-4 text-right font-black text-slate-900 font-mono text-xs">R$ {formatCurrency(s.total)}</td>
+      <td className="px-6 py-4 text-center">
+        <span className="bg-slate-100 px-2 py-0.5 rounded text-[10px] font-black text-slate-500">{s.items.length}</span>
+      </td>
+      <td className="px-6 py-4 text-right">
+        <div className="flex justify-end gap-2">
+          <button onClick={() => setSelectedSale(s)} className="p-2 text-slate-400 hover:text-indigo-600" title="Ver Detalhes"><Eye size={16}/></button>
+          {isMasterUser && (
+            <button onClick={() => { setEditingSale(s); setEditSeller(s.user); setEditSalePayments(s.payments.map(p => ({...p}))); setEditSaleMode('options'); }} className="p-2 text-slate-400 hover:text-amber-500" title="Editar Venda (MASTER)"><Edit size={16}/></button>
+          )}
+          {canDelete && <button onClick={() => handleDeleteSale(s)} className="p-2 text-slate-400 hover:text-red-600" title="Excluir"><Trash2 size={16}/></button>}
+        </div>
+      </td>
+    </tr>
+  ))}
+  {filteredSales.length === 0 && (
+    <tr>
+      <td colSpan={6} className="py-20 text-center text-slate-300 font-bold italic">Nenhuma venda encontrada para este período...</td>
+    </tr>
+  )}
+</tbody>
+</table>
+</div>
+</div>
+</>)}
       {tab === 'fluxo' && showFluxoTab && (
         <div className="bg-white rounded-2xl shadow-sm overflow-hidden border border-slate-200 flex-1 flex flex-col min-h-0 animate-in fade-in">
           <div className="overflow-auto flex-1 custom-scroll">
@@ -414,6 +466,11 @@ const ReportsViewComponent = ({ setCurrentView }: { setCurrentView: (view: strin
                                 <option value="C. Débito">C. Débito</option>
                                 <option value="C. Crédito">C. Crédito</option>
                                 <option value="C. Parcelado">C. Parcelado</option>
+                                <option value="C. SENFF">C. SENFF</option>
+                                <option value="BÔNUSCRED">BÔNUSCRED</option>
+                                <option value="Voucher">Voucher</option>
+                                <option value="Voucher VIP">Voucher VIP</option>
+                                <option value="Crediário">Crediário</option>
                              </select>
                              <div className="relative flex-1">
                                 <span className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 text-[10px]">R$</span>
@@ -500,7 +557,107 @@ const ReportsViewComponent = ({ setCurrentView }: { setCurrentView: (view: strin
         </div>
       )}
       
-      {selectedSale && (<div className="fixed inset-0 flex items-center justify-center p-6 z-[100] animate-in fade-in"><div className="bg-white p-8 rounded-[2rem] w-full max-w-2xl shadow-2xl space-y-6 max-h-[90vh] overflow-auto custom-scroll"><div className="flex justify-between items-center border-b pb-4"><h3 className="text-xl font-black text-slate-900 uppercase italic">Detalhes da Venda #{selectedSale.id.toString().slice(-6)}</h3><div className="flex items-center gap-2"><button onClick={() => setReprintSale(selectedSale)} className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all" title="Reimprimir Cupom"><Printer size={20}/></button><button onClick={() => setSelectedSale(null)} className="text-slate-300 hover:text-slate-500"><X size={24}/></button></div></div><div className="grid grid-cols-2 gap-6 bg-slate-50 p-4 rounded-2xl border"><div><p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Data / Hora</p><p className="text-xs font-bold text-slate-700">{new Date(selectedSale.date).toLocaleString()}</p></div><div><p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Vendedor</p><p className="text-xs font-black text-indigo-600 uppercase">{selectedSale.user}</p></div></div><div className="space-y-3"><h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Produtos Vendidos</h4><div className="border rounded-2xl overflow-hidden"><table className="w-full text-left text-xs"><thead className="bg-slate-50 font-black text-slate-500 uppercase text-[9px]"><tr><th className="px-4 py-2">Item</th><th className="px-4 py-2 text-center">Qtd</th><th className="px-4 py-2 text-right">Total</th><th className="px-4 py-2 text-center">Troca</th></tr></thead><tbody className="divide-y">{selectedSale.items.map((it, i) => (<tr key={i} className={`bg-white ${it.isExchanged ? 'opacity-50 grayscale' : ''}`}><td className="px-4 py-3"><div className="flex flex-col"><span className="font-bold">{it.name}</span><span className="text-[9px] text-slate-400 font-mono">{it.sku}</span><span className="text-[8px] text-slate-500 italic mt-0.5 uppercase tracking-tighter">tam: {it.size || '-'} / cor: {it.color || '-'}</span>{it.isExchanged && <span className="text-[7px] font-black text-red-500 uppercase mt-0.5 animate-pulse">Item Trocado</span>}</div></td><td className="px-4 py-3 text-center font-bold">{it.quantity}</td><td className="px-4 py-3 text-right font-mono font-bold text-indigo-600">R$ {formatCurrency((it.price * it.quantity) - it.discountValue - it.manualDiscountValue)}</td><td className="px-4 py-3 text-center">{canExchange && !it.isExchanged && (<button onClick={() => handleItemExchange(selectedSale, it)} className="p-1.5 bg-amber-50 text-amber-500 hover:bg-amber-500 hover:text-white rounded-lg transition-all shadow-sm" title="Trocar Item"><RotateCcw size={14}/></button>)}</td></tr>))}</tbody></table></div></div><div className="border-t pt-6 flex flex-col items-end gap-2"><div className="flex justify-between w-64 text-xs font-bold text-slate-400"><span>Subtotal</span><span className="font-mono">R$ {formatCurrency(selectedSale.subtotal)}</span></div><div className="flex justify-between w-64 text-xs font-bold text-red-400"><span>Desconto ({selectedSale.discountPercent.toFixed(1)}%)</span><span className="font-mono">- R$ {formatCurrency(selectedSale.discount)}</span></div>{selectedSale.exchangeCreditUsed && selectedSale.exchangeCreditUsed > 0 && (<div className="flex justify-between w-64 text-xs font-bold text-amber-500"><span>Crédito Utilizado</span><span className="font-mono">- R$ {formatCurrency(selectedSale.exchangeCreditUsed)}</span></div>)}<div className="flex justify-between w-64 text-xl font-black text-slate-900 border-t pt-2"><span className="italic uppercase tracking-tighter">Total Pago</span><span className="font-mono">R$ {formatCurrency(selectedSale.total)}</span></div></div><div className="space-y-3"><h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Meios de Pagamento</h4><div className="flex flex-wrap gap-2">{selectedSale.payments.map((p, i) => (<div key={i} className={`bg-${(p.method === 'Voucher VIP' || p.method === 'F12' || p.method === 'Crediário') ? 'purple' : 'indigo'}-50 border border-${(p.method === 'Voucher VIP' || p.method === 'F12' || p.method === 'Crediário') ? 'purple' : 'indigo'}-100 px-3 py-2 rounded-xl flex flex-col`}><span className={`text-[8px] font-black text-${(p.method === 'Voucher VIP' || p.method === 'F12' || p.method === 'Crediário') ? 'purple' : 'indigo'}-400 uppercase`}>{p.method} {p.installments ? `${p.installments}x` : ''} {p.voucherCode && p.method !== 'Voucher VIP' ? `(${p.voucherCode})` : ''}{(p.method === 'F12' || p.method === 'Crediário') ? ` (${p.f12ClientName})` : ''}</span><span className={`text-xs font-black text-${(p.method === 'Voucher VIP' || p.method === 'F12' || p.method === 'Crediário') ? 'purple' : 'indigo'}-600 font-mono`}>R$ {formatCurrency(p.amount)}</span></div>))}</div></div></div></div>)}
+      {selectedSale && (
+  <div className="fixed inset-0 flex items-center justify-center p-6 z-[100] animate-in fade-in">
+    <div className="bg-white p-8 rounded-[2rem] w-full max-w-2xl shadow-2xl space-y-6 max-h-[90vh] overflow-auto custom-scroll">
+      <div className="flex justify-between items-center border-b pb-4">
+        <h3 className="text-xl font-black text-slate-900 uppercase italic flex items-center gap-2">
+          Detalhes da Venda #{selectedSale.id.toString().slice(-6)}
+          {selectedSale.discountOverride && (
+            <div className="flex items-center gap-1 bg-red-50 text-red-600 px-2 py-0.5 rounded text-[8px] font-black uppercase tracking-widest border border-red-100 animate-pulse">
+              <ShieldAlert size={10} /> Override
+            </div>
+          )}
+        </h3>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setReprintSale(selectedSale)} className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all" title="Reimprimir Cupom"><Printer size={20}/></button>
+          <button onClick={() => setSelectedSale(null)} className="text-slate-300 hover:text-slate-500"><X size={24}/></button>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-6 bg-slate-50 p-4 rounded-2xl border">
+        <div>
+          <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Data / Hora</p>
+          <p className="text-xs font-bold text-slate-700">{new Date(selectedSale.date).toLocaleString()}</p>
+        </div>
+        <div>
+          <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Vendedor</p>
+          <p className="text-xs font-black text-indigo-600 uppercase">{selectedSale.user}</p>
+        </div>
+      </div>
+      <div className="space-y-3">
+        <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Produtos Vendidos</h4>
+        <div className="border rounded-2xl overflow-hidden">
+          <table className="w-full text-left text-xs">
+            <thead className="bg-slate-50 font-black text-slate-500 uppercase text-[9px]">
+              <tr>
+                <th className="px-4 py-2">Item</th>
+                <th className="px-4 py-2 text-center">Qtd</th>
+                <th className="px-4 py-2 text-right">Total</th>
+                <th className="px-4 py-2 text-center">Troca</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {selectedSale.items.map((it, i) => (
+                <tr key={i} className={`bg-white ${it.isExchanged ? 'opacity-50 grayscale' : ''}`}>
+                  <td className="px-4 py-3">
+                    <div className="flex flex-col">
+                      <span className="font-bold">{it.name}</span>
+                      <span className="text-[9px] text-slate-400 font-mono">{it.sku}</span>
+                      <span className="text-[8px] text-slate-500 italic mt-0.5 uppercase tracking-tighter">tam: {it.size || '-'} / cor: {it.color || '-'}</span>
+                      {it.isExchanged && <span className="text-[7px] font-black text-red-500 uppercase mt-0.5 animate-pulse">Item Trocado</span>}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-center font-bold">{it.quantity}</td>
+                  <td className="px-4 py-3 text-right font-mono font-bold text-indigo-600">R$ {formatCurrency((it.price * it.quantity) - it.discountValue - it.manualDiscountValue)}</td>
+                  <td className="px-4 py-3 text-center">
+                    {canExchange && !it.isExchanged && (
+                      <button onClick={() => handleItemExchange(selectedSale, it)} className="p-1.5 bg-amber-50 text-amber-500 hover:bg-amber-500 hover:text-white rounded-lg transition-all shadow-sm" title="Trocar Item"><RotateCcw size={14}/></button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div className="border-t pt-6 flex flex-col items-end gap-2">
+        <div className="flex justify-between w-64 text-xs font-bold text-slate-400">
+          <span>Subtotal</span>
+          <span className="font-mono">R$ {formatCurrency(selectedSale.subtotal)}</span>
+        </div>
+        <div className="flex justify-between w-64 text-xs font-bold text-red-400">
+          <span>Desconto ({selectedSale.discountPercent.toFixed(1)}%)</span>
+          <span className="font-mono">- R$ {formatCurrency(selectedSale.discount)}</span>
+        </div>
+        {selectedSale.exchangeCreditUsed && selectedSale.exchangeCreditUsed > 0 && (
+          <div className="flex justify-between w-64 text-xs font-bold text-amber-500">
+            <span>Crédito Utilizado</span>
+            <span className="font-mono">- R$ {formatCurrency(selectedSale.exchangeCreditUsed)}</span>
+          </div>
+        )}
+        <div className="flex justify-between w-64 text-xl font-black text-slate-900 border-t pt-2">
+          <span className="italic uppercase tracking-tighter">Total Pago</span>
+          <span className="font-mono">R$ {formatCurrency(selectedSale.total)}</span>
+        </div>
+      </div>
+      <div className="space-y-3">
+        <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Meios de Pagamento</h4>
+        <div className="flex flex-wrap gap-2">
+          {selectedSale.payments.map((p, i) => (
+            <div key={i} className={`bg-${(p.method === 'Voucher VIP' || p.method === 'F12' || p.method === 'Crediário') ? 'purple' : 'indigo'}-50 border border-${(p.method === 'Voucher VIP' || p.method === 'F12' || p.method === 'Crediário') ? 'purple' : 'indigo'}-100 px-3 py-2 rounded-xl flex flex-col`}>
+              <span className={`text-[8px] font-black text-${(p.method === 'Voucher VIP' || p.method === 'F12' || p.method === 'Crediário') ? 'purple' : 'indigo'}-400 uppercase`}>
+                {p.method} {p.installments ? `${p.installments}x` : ''} {p.voucherCode && p.method !== 'Voucher VIP' ? `(${p.voucherCode})` : ''}{(p.method === 'F12' || p.method === 'Crediário') ? ` (${p.f12ClientName})` : ''}
+              </span>
+              <span className={`text-xs font-black text-${(p.method === 'Voucher VIP' || p.method === 'F12' || p.method === 'Crediário') ? 'purple' : 'indigo'}-600 font-mono`}>
+                R$ {formatCurrency(p.amount)}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  </div>
+)}
 
       {reprintSale && (
         <div className="fixed inset-0 flex items-center justify-center p-6 z-[150] animate-in fade-in no-print-overlay">

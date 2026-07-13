@@ -45,6 +45,9 @@ const SalesViewComponent = ({ setCurrentView }: { setCurrentView: (view: string)
   const [fluxoVal, setFluxoVal] = useState(0);
   const [ocultarFluxo, setOcultarFluxo] = useState(false);
   const [receiptData, setReceiptData] = useState<Sale | null>(null);
+  const [isDiscountAuthorized, setIsDiscountAuthorized] = useState(false);
+  const [showOverrideModal, setShowOverrideModal] = useState(false);
+  const [overridePassword, setOverridePassword] = useState('');
   const searchInputRef = useRef<HTMLInputElement>(null);
   
   const [customerSearch, setCustomerSearch] = useState('');
@@ -271,6 +274,12 @@ const SalesViewComponent = ({ setCurrentView }: { setCurrentView: (view: string)
     }
   }, [search, products, addDirectly]);
 
+  useEffect(() => {
+    if (cart.length === 0) {
+      setIsDiscountAuthorized(false);
+    }
+  }, [cart.length]);
+
   const subtotal = useMemo(() => {
     return cart.reduce((acc, i) => acc + (i.price * i.quantity) - i.discountValue - i.manualDiscountValue, 0);
   }, [cart]);
@@ -285,7 +294,7 @@ const SalesViewComponent = ({ setCurrentView }: { setCurrentView: (view: string)
   
   const globalDiscountValue = useMemo(() => {
     const inputVal = Number(discountInput) || 0;
-    const limitPct = isAdmin ? 100 : settings.maxGlobalDiscount;
+    const limitPct = (isAdmin || isDiscountAuthorized) ? 100 : settings.maxGlobalDiscount;
     
     const maxTotalBudget = totalGrossDiscretionaryBase * (limitPct / 100);
     const availableForGlobal = Math.max(0, maxTotalBudget - totalManualItemDiscounts);
@@ -348,7 +357,8 @@ const SalesViewComponent = ({ setCurrentView }: { setCurrentView: (view: string)
       items: [...cart], 
       change: changeValue,
       exchangeCreditUsed: creditToUse,
-      customerId: selectedCustomer?.id
+      customerId: selectedCustomer?.id,
+      discountOverride: isDiscountAuthorized
     };
     setSales((prev: any) => [sale, ...prev]);
 
@@ -429,6 +439,7 @@ const SalesViewComponent = ({ setCurrentView }: { setCurrentView: (view: string)
     setDiscountInput(0); 
     setExchangeCredit(remainingExchangeCredit);
     setSelectedCustomer(null);
+    setIsDiscountAuthorized(false);
   };
 
   const validateVoucher = () => {
@@ -497,7 +508,7 @@ const SalesViewComponent = ({ setCurrentView }: { setCurrentView: (view: string)
     if (currentPayMethod === 'C. Débito') net = currentPayAmount * (1 - settings.cardFees.debit / 100);
     else if (currentPayMethod === 'C. Crédito') net = currentPayAmount * (1 - settings.cardFees.credit1x / 100);
     else if (currentPayMethod === 'C. Parcelado') net = currentPayAmount * (1 - settings.cardFees.creditInstallments / 100);
-    else if (currentPayMethod === 'C. SENFF') net = currentPayAmount; // No specific fee provided
+    else if (currentPayMethod === 'C. SENFF' || currentPayMethod === 'BÔNUSCRED') net = currentPayAmount; 
     else if (currentPayMethod === 'Crediário') net = 0; 
     
     setAppliedPayments([...appliedPayments, { 
@@ -723,9 +734,21 @@ const SalesViewComponent = ({ setCurrentView }: { setCurrentView: (view: string)
                                   val = Number(raw.replace(/\D/g, '')) || 0;
                                 }
 
+                                const itemGross = item.price * item.quantity;
+                                let absoluteRequested = 0;
+                                if (item.manualDiscountType === 'percent') { absoluteRequested = itemGross * (val / 100); }
+                                else { absoluteRequested = val; }
+
+                                const requestedPct = itemGross > 0 ? (absoluteRequested / itemGross) * 100 : 0;
+
+                                if (!isAdmin && !isDiscountAuthorized && requestedPct > settings.maxGlobalDiscount) {
+                                  setShowOverrideModal(true);
+                                  return;
+                                }
+
                                 const totalGross = cart.filter(it => !it.discountBlocked).reduce((acc, i) => acc + (i.price * i.quantity), 0);
-                                const limitPct = isAdmin ? 100 : settings.maxGlobalDiscount;
-                                const maxTotalBudget = isAdmin ? totalGross : (totalGross * (limitPct / 100));
+                                const limitPct = (isAdmin || isDiscountAuthorized) ? 100 : settings.maxGlobalDiscount;
+                                const maxTotalBudget = (isAdmin || isDiscountAuthorized) ? totalGross : (totalGross * (limitPct / 100));
 
                                 const otherManualItems = cart.filter(it => it.cartId !== item.cartId).reduce((acc, it) => acc + it.manualDiscountValue, 0);
                                 
@@ -735,11 +758,6 @@ const SalesViewComponent = ({ setCurrentView }: { setCurrentView: (view: string)
                                 currentGlobalVal = Math.min(currentGlobalVal, maxTotalBudget);
 
                                 const budgetRemainingForThisItem = Math.max(0, maxTotalBudget - otherManualItems - currentGlobalVal);
-
-                                const itemGross = item.price * item.quantity;
-                                let absoluteRequested = 0;
-                                if (item.manualDiscountType === 'percent') { absoluteRequested = itemGross * (val / 100); }
-                                else { absoluteRequested = val; }
 
                                 const clampedAbsolute = Math.min(absoluteRequested, budgetRemainingForThisItem, itemGross);
                                 
@@ -802,11 +820,25 @@ const SalesViewComponent = ({ setCurrentView }: { setCurrentView: (view: string)
                               className="w-full bg-transparent border-b border-slate-800 outline-none text-red-400 font-black text-sm pr-4 text-right font-mono" 
                               value={discountType === 'value' ? formatCurrency(discountInput) : discountInput} 
                               onChange={e => {
+                                let val = 0;
                                 if (discountType === 'value') {
-                                  setDiscountInput(parseCurrency(e.target.value));
+                                  val = parseCurrency(e.target.value);
                                 } else {
-                                  const val = e.target.value.replace(/\D/g, '');
-                                  setDiscountInput(Number(val));
+                                  const raw = e.target.value.replace(/\D/g, '');
+                                  val = Number(raw);
+                                }
+
+                                const requestedPct = discountType === 'percent' ? val : (totalGrossDiscretionaryBase > 0 ? (val / totalGrossDiscretionaryBase) * 100 : 0);
+
+                                if (!isAdmin && !isDiscountAuthorized && requestedPct > settings.maxGlobalDiscount) {
+                                  setShowOverrideModal(true);
+                                  return;
+                                }
+
+                                if (discountType === 'value') {
+                                  setDiscountInput(val);
+                                } else {
+                                  setDiscountInput(val);
                                 }
                               }} 
                             />
@@ -916,7 +948,7 @@ const SalesViewComponent = ({ setCurrentView }: { setCurrentView: (view: string)
                             setInstallments(1);
                         }
                     }}>
-                      <option>Pix</option><option>Dinheiro</option><option>C. Débito</option><option>C. Crédito</option><option>C. Parcelado</option><option>C. SENFF</option><option>Voucher</option>
+                      <option>Pix</option><option>Dinheiro</option><option>C. Débito</option><option>C. Crédito</option><option>C. Parcelado</option><option>C. SENFF</option><option>BÔNUSCRED</option><option>Voucher</option>
                       {(isAdmin || isMasterUser) && <option>Voucher VIP</option>}
                       {isAdmin && <option value="Crediário">Crediário</option>}
                     </select>
@@ -1200,7 +1232,7 @@ const SalesViewComponent = ({ setCurrentView }: { setCurrentView: (view: string)
                 description: fluxoDesc || (modalFluxo === 'retirada' ? 'Sangria manual' : 'Entrada manual'), 
                 time: new Date().toISOString(), 
                 user: user.name,
-                hiddenFromReports: modalFluxo === 'retirada' && isMasterUser ? ocultarFluxo : false
+                hiddenFromReports: (modalFluxo === 'retirada' || modalFluxo === 'entrada') && isMasterUser ? ocultarFluxo : false
              };
              setCashSession((prev: CashSession) => ({ ...prev, currentBalance: prev.currentBalance + amt, logs: [log, ...prev.logs] }));
              setModalFluxo(null); setFluxoVal(0); setFluxoDesc(''); setOcultarFluxo(false);
@@ -1233,7 +1265,7 @@ const SalesViewComponent = ({ setCurrentView }: { setCurrentView: (view: string)
                     onChange={e => setFluxoDesc(e.target.value)} 
                   />
                 </div>
-                {modalFluxo === 'retirada' && isMasterUser && (
+                {(modalFluxo === 'retirada' || modalFluxo === 'entrada') && isMasterUser && (
                   <div className="flex items-center justify-between p-3.5 bg-white border border-white rounded-2xl transition-all">
                      <div className="flex flex-col text-left"></div>
                      <input 
@@ -1253,6 +1285,80 @@ const SalesViewComponent = ({ setCurrentView }: { setCurrentView: (view: string)
                 Confirmar Lançamento
              </button>
           </form>
+        </div>
+      )}
+
+      {showOverrideModal && (
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[200] flex items-center justify-center p-4 animate-in fade-in duration-300">
+           <div className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-sm overflow-hidden border border-slate-100 animate-in zoom-in slide-in-from-bottom-8 duration-500">
+              <div className="bg-red-600 p-8 text-center relative overflow-hidden">
+                 <div className="absolute top-0 left-0 w-full h-full opacity-10 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-white via-transparent to-transparent"></div>
+                 <div className="relative z-10 flex flex-col items-center gap-4">
+                    <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center text-red-600 shadow-lg shadow-red-900/20">
+                       <ShieldAlert size={32} />
+                    </div>
+                    <div>
+                       <h2 className="text-xl font-black text-white italic uppercase tracking-tighter">Atenção!</h2>
+                       <p className="text-red-100 text-[10px] font-bold uppercase tracking-widest mt-1">Excede desconto máximo permitido</p>
+                    </div>
+                 </div>
+              </div>
+              <div className="p-8 space-y-6">
+                 <div className="space-y-4">
+                    <div className="space-y-2">
+                       <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Senha do Supervisor</label>
+                       <input 
+                         type="password" 
+                         className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-6 py-4 text-center text-2xl font-black tracking-[0.5em] outline-none focus:border-red-500 transition-all"
+                         placeholder="••••"
+                         value={overridePassword}
+                         onChange={e => setOverridePassword(e.target.value)}
+                         autoFocus
+                         onKeyDown={e => {
+                           if (e.key === 'Enter') {
+                             if (overridePassword === '290') {
+                               setIsDiscountAuthorized(true);
+                               setShowOverrideModal(false);
+                               setOverridePassword('');
+                               notify('Desconto autorizado pelo supervisor!', 'success');
+                             } else {
+                               notify('Senha incorreta!', 'error');
+                               setOverridePassword('');
+                             }
+                           }
+                         }}
+                       />
+                    </div>
+                    <div className="flex flex-col gap-3">
+                       <button 
+                         onClick={() => {
+                           if (overridePassword === '290') {
+                             setIsDiscountAuthorized(true);
+                             setShowOverrideModal(false);
+                             setOverridePassword('');
+                             notify('Desconto autorizado pelo supervisor!', 'success');
+                           } else {
+                             notify('Senha incorreta!', 'error');
+                             setOverridePassword('');
+                           }
+                         }}
+                         className="w-full py-4 bg-red-600 text-white font-black rounded-2xl hover:bg-red-700 transition-all shadow-lg uppercase tracking-widest text-xs"
+                       >
+                         Liberar Desconto
+                       </button>
+                       <button 
+                         onClick={() => {
+                           setShowOverrideModal(false);
+                           setOverridePassword('');
+                         }}
+                         className="w-full py-4 bg-slate-100 text-slate-500 font-black rounded-2xl hover:bg-slate-200 transition-all uppercase tracking-widest text-xs"
+                       >
+                         Cancelar
+                       </button>
+                    </div>
+                 </div>
+              </div>
+           </div>
         </div>
       )}
     </div>

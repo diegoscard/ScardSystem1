@@ -170,6 +170,7 @@ export interface Sale {
   change: number; 
   exchangeCreditUsed?: number; 
   customerId?: number;
+  discountOverride?: boolean;
 }
 
 export interface Supplier {
