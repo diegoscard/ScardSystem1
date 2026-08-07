@@ -10,6 +10,9 @@ const DataProvider = () => {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    // Otimizado com timestamp para carregar apenas o que mudou (Differential Sync)
+    let lastSyncTimestamp = 0;
+
     // Carregar dados iniciais
     fetch('/api/sync')
       .then(async (res) => {
@@ -21,6 +24,11 @@ const DataProvider = () => {
       })
       .then(data => {
         Object.assign(globalStoreData, data);
+        Object.values(data).forEach((val: any) => {
+          if (val.updatedAt > lastSyncTimestamp) {
+            lastSyncTimestamp = val.updatedAt;
+          }
+        });
         setLoaded(true);
       })
       .catch(e => {
@@ -62,15 +70,21 @@ const DataProvider = () => {
 
     const wsInstance = setupWS();
 
-    // Polling de fallback (acada 5 segundos) para sincronizar entre diferentes servidores (Vercel vs AI Studio)
+    // Polling de fallback (cada 20 segundos) para sincronizar entre diferentes servidores
     const pollInterval = setInterval(() => {
-       fetch('/api/sync')
+       fetch(`/api/sync?since=${lastSyncTimestamp}`)
          .then(res => res.json())
          .then(newData => {
-           Object.entries(newData).forEach(([key, value]: [string, any]) => {
+           const entries = Object.entries(newData);
+           if (entries.length === 0) return;
+
+           entries.forEach(([key, value]: [string, any]) => {
              const currentLocal = globalStoreData[key];
              if (!currentLocal || value.updatedAt > (currentLocal.updatedAt || 0)) {
                globalStoreData[key] = value;
+               if (value.updatedAt > lastSyncTimestamp) {
+                 lastSyncTimestamp = value.updatedAt;
+               }
                window.dispatchEvent(new CustomEvent('store-update', { 
                  detail: { key, data: value.data, updatedAt: value.updatedAt } 
                }));
@@ -78,7 +92,7 @@ const DataProvider = () => {
            });
          })
          .catch(e => console.warn("Erro no polling de sincronização:", e));
-    }, 5000);
+    }, 20000);
 
     return () => {
       wsInstance.close();

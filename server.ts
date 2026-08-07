@@ -123,7 +123,11 @@ app.get("/api/health", (req, res) => {
 
 app.get("/api/sync", async (req, res) => {
   try {
-    const result = await pool.query('SELECT store_key, data, updated_at FROM store_data');
+    const since = req.query.since ? Number(req.query.since) : 0;
+    const result = await pool.query(
+      'SELECT store_key, data, updated_at FROM store_data WHERE updated_at > $1',
+      [since]
+    );
     const stateObj: Record<string, any> = {};
     for (const row of result.rows) {
       stateObj[row.store_key] = {
