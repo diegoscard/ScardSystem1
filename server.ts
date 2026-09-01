@@ -72,6 +72,24 @@ async function initDB() {
       );
     `);
 
+    // Ensure "keys" table exists with shop_name
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS "keys" (
+        id SERIAL PRIMARY KEY,
+        key_value VARCHAR(255) UNIQUE NOT NULL,
+        hwid VARCHAR(255),
+        status VARCHAR(50) DEFAULT 'active',
+        expires_at TIMESTAMP,
+        shop_name VARCHAR(255),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    // Ensure shop_name column exists (migration)
+    await client.query(`
+      ALTER TABLE "keys" ADD COLUMN IF NOT EXISTS shop_name VARCHAR(255);
+    `);
+
     client.release();
     console.log("Database initialized successfully!");
   } catch (error) {
@@ -79,7 +97,6 @@ async function initDB() {
   }
 }
 
-// Session API
 app.post("/api/auth/session", async (req, res) => {
   try {
     const { hwid, user } = req.body;
@@ -179,6 +196,36 @@ app.post("/api/sync/:key", async (req, res) => {
   }
 });
 
+// Helper to update store name in settings
+async function updateStoreName(shopName: string) {
+  if (!shopName) return;
+  try {
+    const key = 'db_settings';
+    const result = await pool.query('SELECT data FROM store_data WHERE store_key = $1', [key]);
+    let settings = {};
+    if (result.rows.length > 0) {
+      settings = result.rows[0].data;
+    }
+    
+    // Only update if different
+    if ((settings as any).storeName !== shopName) {
+      const updatedSettings = { ...settings, storeName: shopName };
+      const now = Date.now();
+      await pool.query(`
+        INSERT INTO store_data (store_key, data, updated_at)
+        VALUES ($1, $2, $3)
+        ON CONFLICT (store_key) DO UPDATE SET data = EXCLUDED.data, updated_at = EXCLUDED.updated_at;
+      `, [key, JSON.stringify(updatedSettings), now]);
+      
+      // Broadcast update to all clients
+      broadcast({ type: 'update', key, data: updatedSettings, updatedAt: now });
+      console.log(`Automatic shop name updated to: ${shopName}`);
+    }
+  } catch (error) {
+    console.error("Error updating store name automatically:", error);
+  }
+}
+
 // License Validation API
 app.post("/api/license/check-hwid", async (req, res) => {
   try {
@@ -204,7 +251,15 @@ app.post("/api/license/check-hwid", async (req, res) => {
       return res.json({ valid: false });
     }
 
-    return res.json({ valid: true });
+    // Coleta o nome da loja automaticamente no banco local db_sys1
+    if (license.shop_name) {
+      await updateStoreName(license.shop_name);
+    }
+
+    return res.json({ 
+      valid: true, 
+      shopName: license.shop_name 
+    });
   } catch (error) {
     res.status(500).json({ error: 'DB Error' });
   }
@@ -235,7 +290,16 @@ app.post("/api/license/validate", async (req, res) => {
     // First time use: register HWID in "hwid" column
     if (!license.hwid) {
       await pool.query('UPDATE "keys" SET hwid = $1 WHERE key_value = $2', [hwid, key]);
-      return res.json({ valid: true });
+      
+      // Coleta o nome da loja automaticamente no banco local db_sys1
+      if (license.shop_name) {
+        await updateStoreName(license.shop_name);
+      }
+
+      return res.json({ 
+        valid: true,
+        shopName: license.shop_name
+      });
     }
     
     // Validate existing HWID
@@ -243,7 +307,15 @@ app.post("/api/license/validate", async (req, res) => {
       return res.json({ valid: false, message: 'Chave já registrada em outro dispositivo' });
     }
 
-    return res.json({ valid: true });
+    // Coleta o nome da loja automaticamente no banco local db_sys1
+    if (license.shop_name) {
+      await updateStoreName(license.shop_name);
+    }
+
+    return res.json({ 
+      valid: true,
+      shopName: license.shop_name
+    });
   } catch (error) {
     console.error("Erro na validação de licença:", error);
     res.status(500).json({ error: 'DB Error no servidor ou tabela keys não encontrada', message: error instanceof Error ? error.message : 'Unknown error' });

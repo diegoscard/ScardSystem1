@@ -94,6 +94,12 @@ const App = () => {
       .then(data => {
         if (data.valid) {
           setIsUnlocked(true);
+          
+          // Coleta o nome da loja automaticamente se fornecido pela licença
+          if (data.shopName && settings.storeName !== data.shopName) {
+            setSettings(prev => ({ ...prev, storeName: data.shopName }));
+          }
+
           // Após desbloquear o hardware, tenta restaurar a sessão do usuário (F5 persistence)
           return fetch(`/api/auth/session/${deviceHwid}`);
         }
@@ -138,6 +144,11 @@ const App = () => {
       
       if (data.valid) {
         setIsUnlocked(true);
+        
+        // Coleta o nome da loja automaticamente se fornecido pela licença
+        if (data.shopName && settings.storeName !== data.shopName) {
+          setSettings(prev => ({ ...prev, storeName: data.shopName }));
+        }
       } else {
         setAuthError(data.message || 'Chave de acesso inválida.');
         setAccessKeyInput('');
