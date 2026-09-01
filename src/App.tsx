@@ -437,7 +437,19 @@ const App = () => {
               <Monitor size={12} />
               <span className="text-[8px] font-black uppercase tracking-widest">Identificador do Terminal</span>
             </div>
-            <code className="bg-slate-950/80 px-3 py-1.5 rounded-lg text-[9px] font-mono font-black text-indigo-500/80 border border-slate-800/50">{deviceHwid}</code>
+            <div className="flex items-center gap-2">
+              <code className="bg-slate-950/80 px-3 py-1.5 rounded-lg text-[9px] font-mono font-black text-indigo-500/80 border border-slate-800/50">{deviceHwid}</code>
+              <button 
+                onClick={() => {
+                  const message = encodeURIComponent(`Olá, gostaria de solicitar a ativação do meu sistema SCARDPRO.\n\nMeu Identificador do Terminal (HWID):\n${deviceHwid}`);
+                  window.open(`https://wa.me/5541988745822?text=${message}`, '_blank');
+                }}
+                className="p-1.5 bg-[#25D366] hover:bg-[#128C7E] text-white rounded-lg transition-all shadow-lg shadow-emerald-500/20 active:scale-95 flex items-center justify-center"
+                title="Enviar via WhatsApp"
+              >
+                <Share2 size={14} />
+              </button>
+            </div>
           </div>
         </div>
       </div>
