@@ -1316,7 +1316,7 @@ const SalesViewComponent = ({ setCurrentView }: { setCurrentView: (view: string)
                          autoFocus
                          onKeyDown={e => {
                            if (e.key === 'Enter') {
-                             if (overridePassword === '290') {
+                             if (overridePassword === '007') {
                                setIsDiscountAuthorized(true);
                                setShowOverrideModal(false);
                                setOverridePassword('');
@@ -1332,7 +1332,7 @@ const SalesViewComponent = ({ setCurrentView }: { setCurrentView: (view: string)
                     <div className="flex flex-col gap-3">
                        <button 
                          onClick={() => {
-                           if (overridePassword === '290') {
+                           if (overridePassword === '007') {
                              setIsDiscountAuthorized(true);
                              setShowOverrideModal(false);
                              setOverridePassword('');
